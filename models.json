@@ -6,5 +6,54 @@
     "poster": "LH53292/poster.webp",
     "zip": "LH53292/LH53292_3d.zip",
     "zipSize": "6,4 МБ"
+  },
+  "772311590964": {
+    "title": "Ambrella LH56063",
+    "size": "Ø600 × 305 мм, со штангой до 750 мм",
+    "glb": "LH56063/LH56063.glb",
+    "poster": "LH56063/poster.webp",
+    "orbit": "0deg 80deg auto"
+  },
+  "729225630104": {
+    "title": "Ambrella LH56064",
+    "size": "Ø700 × 305 мм, со штангой до 750 мм",
+    "glb": "LH56064/LH56064.glb",
+    "poster": "LH56064/poster.webp",
+    "orbit": "0deg 80deg auto"
+  },
+  "936562147964": {
+    "title": "Ambrella LH56057",
+    "size": "Ø600 × 305 мм, со штангой до 750 мм",
+    "glb": "LH56057/LH56057.glb",
+    "poster": "LH56057/poster.webp",
+    "orbit": "0deg 80deg auto"
+  },
+  "845037694774": {
+    "title": "Ambrella LH56058",
+    "size": "Ø700 × 305 мм, со штангой до 750 мм",
+    "glb": "LH56058/LH56058.glb",
+    "poster": "LH56058/poster.webp",
+    "orbit": "0deg 80deg auto"
+  },
+  "795473271824": {
+    "title": "Ambrella LH56066",
+    "size": "185 × 100 × 310 мм",
+    "glb": "LH56066/LH56066.glb",
+    "poster": "LH56066/poster.webp",
+    "orbit": "35deg 85deg auto"
+  },
+  "335283217784": {
+    "title": "Ambrella LH56061",
+    "size": "185 × 100 × 310 мм",
+    "glb": "LH56061/LH56061.glb",
+    "poster": "LH56061/poster.webp",
+    "orbit": "35deg 85deg auto"
+  },
+  "684758076174": {
+    "title": "Ambrella LH31115",
+    "size": "Ø250 × 90 мм",
+    "glb": "LH31115/LH31115.glb",
+    "poster": "LH31115/poster.webp",
+    "orbit": "30deg 85deg auto"
   }
 }

@@ -103,7 +103,7 @@
       '<div class="ml3d-card" role="dialog" aria-label="3D-модель">' +
       '<div class="ml3d-progress"></div>' +
       '<button class="ml3d-close" type="button" aria-label="Закрыть">×</button>' +
-      '<model-viewer camera-controls auto-rotate auto-rotate-delay="1500" ' +
+      '<model-viewer loading="eager" camera-controls auto-rotate auto-rotate-delay="1500" ' +
       'rotation-per-second="20deg" interaction-prompt="none" shadow-intensity="0.6" ' +
       'environment-image="neutral" exposure="1.1" touch-action="pan-y" ' +
       'camera-orbit="0deg 92deg auto" min-camera-orbit="auto 20deg auto" ' +
@@ -114,6 +114,8 @@
     var viewer = overlay.querySelector("model-viewer");
     viewer.setAttribute("alt", model.title || "3D-модель товара");
     viewer.setAttribute("poster", asset(model.poster));
+    // Optional per-model start view, e.g. sconces a little from the side.
+    if (model.orbit) viewer.setAttribute("camera-orbit", model.orbit);
     overlay.querySelector(".ml3d-bar b").textContent =
       (model.title ? model.title + " · " : "") + (model.size || "");
     if (model.zip) {

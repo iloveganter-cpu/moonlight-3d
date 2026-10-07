@@ -6,10 +6,10 @@
  * (<model-viewer>) and the model are loaded only when the button is pressed.
  * Products not in models.json are left untouched.
  *
- * Install: Tilda → Site settings → Insert code → inside HEAD (see README.md):
- * a small loader that adds this file from the repo's main branch with a daily
- * ?d=<date> stamp. New models then need only a push + jsDelivr purge — no
- * Tilda edits or republishing.
+ * Install: one line in Tilda → Site settings → Insert code → inside HEAD:
+ *   <script src="https://iloveganter-cpu.github.io/moonlight-3d/tilda-3d.js" defer></script>
+ * Served by GitHub Pages (10-minute cache), so a push is live within minutes:
+ * new models need no Tilda edits or republishing.
  */
 (function () {
   "use strict";
@@ -20,9 +20,6 @@
     ".t-store__product-popup[data-product-lid], .t-store__product-snippet[data-product-lid]";
   var script = document.currentScript;
   var BASE = script && script.src ? script.src.replace(/[^\/]*$/, "") : "./";
-  // The Tilda loader adds ?d=<date> so browsers re-check daily instead of
-  // trusting jsDelivr's 7-day cache; models.json follows the same stamp.
-  var STAMP = script && script.src.indexOf("?") > 0 ? script.src.split("?")[1] : "";
 
   var models = null;
   var overlay = null;
@@ -214,7 +211,7 @@
   }
 
   function init() {
-    fetch(BASE + "models.json" + (STAMP ? "?" + STAMP : ""))
+    fetch(BASE + "models.json")
       .then(function (r) { return r.ok ? r.json() : {}; })
       .then(start, function () {});
   }

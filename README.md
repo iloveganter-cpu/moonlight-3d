@@ -1,7 +1,8 @@
 # 3D-модели в карточках moonlight-kg.store
 
 Кнопки «3D-модель» (просмотр) и «Скачать 3D» (ZIP для дизайнеров) на галерее
-товаров Тильды. Файлы раздаёт jsDelivr прямо из этого репозитория.
+товаров Тильды. Файлы раздаёт GitHub Pages из этого репозитория:
+https://iloveganter-cpu.github.io/moonlight-3d/
 
 - `tilda-3d.js` — скрипт для сайта (ищет попап товара по `data-product-lid`).
 - `models.json` — какие товары с моделями: ключ = ID товара в Тильде
@@ -14,7 +15,7 @@
 
 ```html
 <!-- 3D-модели в карточках товаров: github.com/iloveganter-cpu/moonlight-3d -->
-<script>(function(){var s=document.createElement('script');s.defer=true;s.src='https://cdn.jsdelivr.net/gh/iloveganter-cpu/moonlight-3d@main/tilda-3d.js?d='+new Date().toISOString().slice(0,10);document.head.appendChild(s);})();</script>
+<script src="https://iloveganter-cpu.github.io/moonlight-3d/tilda-3d.js" defer></script>
 ```
 
 После сохранения — переопубликовать все страницы.
@@ -32,18 +33,8 @@ npx -y @gltf-transform/cli@4 optimize web/<КОД>/raw.glb web/<КОД>/<КОД>
     --compress draco --texture-compress webp --texture-size 1024 --simplify false
 # 2. архив для дизайнеров (FBX + OBJ для 3ds Max, текстура, README)
 "$BL" -b --factory-startup -P export_designer.py -- <КОД>/build_<код>.py <КОД> web/<КОД> "<размеры>"
-# 3. постер: рендер hero.py с прозрачным фоном → web/<КОД>/poster.webp
+# 3. постер: рендер LH53293/hero.py с прозрачным фоном → web/<КОД>/poster.webp
 ```
 
-Добавить запись в `models.json`, затем:
-
-```bash
-cd web && git add -A && git commit -m "Add <КОД>" && git push
-for f in tilda-3d.js models.json; do curl -s https://purge.jsdelivr.net/gh/iloveganter-cpu/moonlight-3d@main/$f; done
-```
-
-Тильду трогать не нужно. Посетители увидят модель сразу после сброса кэша
-(постоянные — не позже чем через сутки).
-
-Если меняется уже выложенный файл модели — дать ему новое имя (или
-`?v=2` в models.json), иначе браузеры держат старый до 7 дней.
+Добавить запись в `models.json`, затем `git add -A && git commit && git push`.
+Через 1–10 минут модель на сайте. Тильду трогать не нужно.

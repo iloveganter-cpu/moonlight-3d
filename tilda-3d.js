@@ -205,7 +205,7 @@
     new MutationObserver(function () {
       if (!queued) {
         queued = true;
-        requestAnimationFrame(scan);
+        setTimeout(scan, 50);   // not rAF: it never fires in a hidden tab
       }
     }).observe(document.body, { childList: true, subtree: true });
   }

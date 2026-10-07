@@ -100,7 +100,7 @@
       '<model-viewer camera-controls auto-rotate auto-rotate-delay="1500" ' +
       'rotation-per-second="20deg" interaction-prompt="none" shadow-intensity="0.6" ' +
       'environment-image="neutral" exposure="1.1" touch-action="pan-y" ' +
-      'camera-orbit="0deg 82deg auto" min-camera-orbit="auto 20deg auto" ' +
+      'camera-orbit="0deg 92deg auto" min-camera-orbit="auto 20deg auto" ' +
       'max-camera-orbit="auto 160deg auto"></model-viewer>' +
       '<div class="ml3d-bar"><span><b></b></span>' +
       "<span>Вращайте мышкой или пальцем, колёсико / два пальца — приблизить</span></div>" +

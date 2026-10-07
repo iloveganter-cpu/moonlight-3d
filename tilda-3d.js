@@ -28,11 +28,15 @@
 
   // ---------------------------------------------------------------- styles
   var CSS = [
-    ".ml3d-btn{position:absolute;left:12px;top:12px;z-index:5;display:inline-flex;align-items:center;gap:6px;",
+    ".ml3d-tools{position:absolute;left:12px;top:12px;z-index:5;display:flex;flex-wrap:wrap;gap:8px}",
+    ".ml3d-btn{display:inline-flex;align-items:center;gap:6px;text-decoration:none;",
     "padding:9px 14px;border:0;border-radius:5px;background:#000;color:#fff;cursor:pointer;",
     "font:600 13px/1 Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.18)}",
-    ".ml3d-btn:hover{background:#333}",
+    ".ml3d-btn:hover{background:#333;color:#fff}",
+    ".ml3d-btn_light{background:#fff;color:#000;box-shadow:0 0 0 1px #000 inset,0 2px 8px rgba(0,0,0,.12)}",
+    ".ml3d-btn_light:hover{background:#f2f2f2;color:#000}",
     ".ml3d-btn svg{width:16px;height:16px}",
+    ".ml3d-bar a{color:#000;font-weight:600;white-space:nowrap}",
     ".ml3d-overlay{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.55);",
     "display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}",
     ".ml3d-card{position:relative;width:min(960px,100%);height:min(760px,100%);background:#fff;",
@@ -103,13 +107,17 @@
       'camera-orbit="0deg 92deg auto" min-camera-orbit="auto 20deg auto" ' +
       'max-camera-orbit="auto 160deg auto"></model-viewer>' +
       '<div class="ml3d-bar"><span><b></b></span>' +
-      "<span>Вращайте мышкой или пальцем, колёсико / два пальца — приблизить</span></div>" +
-      "</div>";
+      '<span class="ml3d-hint">Вращайте мышкой или пальцем, колёсико / два пальца — приблизить</span>' +
+      "</div></div>";
     var viewer = overlay.querySelector("model-viewer");
     viewer.setAttribute("alt", model.title || "3D-модель товара");
     viewer.setAttribute("poster", asset(model.poster));
     overlay.querySelector(".ml3d-bar b").textContent =
       (model.title ? model.title + " · " : "") + (model.size || "");
+    if (model.zip) {
+      var bar = overlay.querySelector(".ml3d-bar");
+      bar.insertBefore(downloadLink(model, "a"), bar.lastChild);
+    }
     var progress = overlay.querySelector(".ml3d-progress");
     viewer.addEventListener("progress", function (e) {
       var p = e.detail.totalProgress;
@@ -125,7 +133,7 @@
     loadViewer().then(function () {
       viewer.setAttribute("src", asset(model.glb));
     }, function () {
-      overlay.querySelector(".ml3d-bar span").textContent =
+      overlay.querySelector(".ml3d-hint").textContent =
         "Не удалось загрузить 3D-просмотрщик. Попробуйте обновить страницу.";
     });
   }
@@ -135,12 +143,37 @@
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg>';
 
+  var DOWNLOAD_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>';
+
+  // style "button": gallery button; "a": plain link in the viewer's bar.
+  function downloadLink(model, style) {
+    var link = document.createElement("a");
+    link.href = asset(model.zip);
+    link.setAttribute("download", "");
+    link.rel = "nofollow";
+    link.title = "ZIP: FBX и OBJ для 3ds Max, текстуры" +
+      (model.zipSize ? " · " + model.zipSize : "");
+    if (style === "button") {
+      link.className = "ml3d-btn ml3d-btn_light";
+      link.innerHTML = DOWNLOAD_ICON + "<span>Скачать 3D</span>";
+    } else {
+      link.textContent = "Скачать для 3ds Max (FBX, OBJ" +
+        (model.zipSize ? ", " + model.zipSize : "") + ")";
+    }
+    link.addEventListener("click", function (e) { e.stopPropagation(); });
+    return link;
+  }
+
   function decorate(card) {
     var model = models[card.getAttribute("data-product-lid")];
-    if (!model || card.querySelector(".ml3d-btn")) return;
+    if (!model || card.querySelector(".ml3d-tools")) return;
     var slider = card.querySelector(".js-store-prod-slider");
     if (!slider) return;
     if (getComputedStyle(slider).position === "static") slider.style.position = "relative";
+    var tools = document.createElement("div");
+    tools.className = "ml3d-tools";
     var button = document.createElement("button");
     button.type = "button";
     button.className = "ml3d-btn";
@@ -150,7 +183,9 @@
       e.stopPropagation();
       open(model);
     });
-    slider.appendChild(button);
+    tools.appendChild(button);
+    if (model.zip) tools.appendChild(downloadLink(model, "button"));
+    slider.appendChild(tools);
   }
 
   var queued = false;

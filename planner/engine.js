@@ -303,14 +303,162 @@
     for (var c = 1; c <= n; c++) { var r = Math.ceil(n / c), sc = Math.abs(a / c - b / r) + (r * c - n) * Math.min(a, b) * 0.6; if (!best || sc < best[2]) best = [c, r, sc]; }
     return [best[0], best[1]];
   }
-  // fixed — уже стоящие потолочные светильники других групп: новые встанут в «свободные» зоны
+  // fixed — уже стоящие потолочные светильники других групп (люстра): споты их обходят
   function layout(poly, n, mount, opt) {
     if (n <= 0) return [];
     opt = opt || {};
     if (mount === 'wall') return layoutWall(poly, n, opt.wallOffset || 0.08);
-    var fixed = (opt.fixed || []).filter(function (p) { return inside(p[0], p[1], poly); });
-    if (isAxisRect(poly)) { var gr = rectGridAvoiding(poly, n, fixed); if (gr) return gr; }
-    return layoutCVT(poly, n, fixed);
+    var sym = symLayout(poly, n, opt);
+    return sym ? sym.pts : layoutCVT(poly, n, (opt.fixed || []).filter(function (p) { return inside(p[0], p[1], poly); }));
+  }
+
+  // ---------- Симметричная («дизайнерская») расстановка ----------
+  // Комната со стенами под прямым углом делится на прямоугольные зоны (Г — 2, П — 3); в каждой зоне —
+  // ровная сетка по центру, шаг одинаковый для всей комнаты, от стены — половина шага.
+  function isOrtho(poly) {
+    for (var i = 0, n = poly.length; i < n; i++) { var a = poly[i], b = poly[(i + 1) % n]; if (Math.abs(a[0] - b[0]) > 1e-6 && Math.abs(a[1] - b[1]) > 1e-6) return false; }
+    return true;
+  }
+  // Разбиение на прямоугольники полосами (вертикальными или горизонтальными — где зон меньше)
+  function zones(poly) {
+    if (!isOrtho(poly)) return null;
+    function slabs(ax) { // ax=0: вертикальные полосы по x
+      var cs = uniq(poly.map(function (p) { return p[ax]; })), out = [];
+      for (var i = 0; i < cs.length - 1; i++) {
+        var c0 = cs[i], c1 = cs[i + 1], mid = (c0 + c1) / 2, cut = [];
+        for (var k = 0, n = poly.length; k < n; k++) { // пересечения линии mid с рёбрами, параллельными другой оси
+          var a = poly[k], b = poly[(k + 1) % n];
+          if (Math.abs(a[ax] - b[ax]) > 1e-9 && (a[ax] - mid) * (b[ax] - mid) < 0) cut.push(a[1 - ax]);
+        }
+        cut.sort(function (p, q) { return p - q; });
+        for (var j = 0; j + 1 < cut.length; j += 2) out.push({ c0: c0, c1: c1, d0: cut[j], d1: cut[j + 1] });
+      }
+      // склеиваем соседние полосы с одинаковым «сечением»
+      var merged = [];
+      out.forEach(function (s) {
+        var m = merged.filter(function (r) { return Math.abs(r.c1 - s.c0) < 1e-9 && Math.abs(r.d0 - s.d0) < 1e-9 && Math.abs(r.d1 - s.d1) < 1e-9; })[0];
+        if (m) m.c1 = s.c1; else merged.push({ c0: s.c0, c1: s.c1, d0: s.d0, d1: s.d1 });
+      });
+      return merged.map(function (r) { return ax === 0 ? { x0: r.c0, x1: r.c1, y0: r.d0, y1: r.d1 } : { x0: r.d0, x1: r.d1, y0: r.c0, y1: r.c1 }; });
+    }
+    function uniq(a) { a = a.slice().sort(function (p, q) { return p - q; }); return a.filter(function (v, i) { return !i || v - a[i - 1] > 1e-9; }); }
+    var v = slabs(0), h = slabs(1);
+    // меньше зон — лучше; при равенстве — та разбивка, где главная зона больше (у П — перемычка во всю ширину,
+    // туда встанет люстра)
+    var maxA = function (z) { return Math.max.apply(null, z.map(function (r) { return (r.x1 - r.x0) * (r.y1 - r.y0); })); };
+    var best = v.length !== h.length ? (v.length < h.length ? v : h) : (maxA(v) >= maxA(h) ? v : h);
+    return best.sort(function (p, q) { return (q.x1 - q.x0) * (q.y1 - q.y0) - (p.x1 - p.x0) * (p.y1 - p.y0); }); // первая — главная (самая большая)
+  }
+  function zoneGrid(z, cols, rows) {
+    var pts = [], w = z.x1 - z.x0, h = z.y1 - z.y0;
+    for (var j = 0; j < rows; j++) for (var i = 0; i < cols; i++) pts.push([z.x0 + w * (i + 0.5) / cols, z.y0 + h * (j + 0.5) / rows]);
+    return pts;
+  }
+  function near(pts, fixed, d) { return pts.some(function (p) { return fixed.some(function (f) { return Math.hypot(p[0] - f[0], p[1] - f[1]) < d; }); }); }
+  // Все симметричные варианты: перебираем общий шаг s; в зоне колонки=round(w/s), ряды=round(h/s).
+  // Если в зоне стоит люстра — сетка этой зоны чётная (центр свободен). Возвращает варианты по возрастанию числа.
+  function symOptions(poly, fixed) {
+    var zs = zones(poly); if (!zs) return null;
+    fixed = (fixed || []).filter(function (p) { return inside(p[0], p[1], poly); });
+    if (zs.length <= 3) return symOptionsFree(zs, fixed);
+    return symOptionsShared(zs, fixed);
+  }
+  // До 3 зон: у каждой зоны своя сетка (колонки×ряды), но шаг сетки во всех зонах и по обеим осям должен
+  // быть близким (разброс ≤ 60 % от среднего) — иначе выглядит неаккуратно. На каждое число — самый ровный вариант.
+  function symOptionsFree(zs, fixed) {
+    var per = zs.map(function (z) {
+      var w = z.x1 - z.x0, h = z.y1 - z.y0, list = [];
+      for (var c = 1; c <= 16; c++) for (var r = 1; r <= 16; r++) {
+        var cw = w / c, ch = h / r;
+        if ((cw < 0.5 || ch < 0.5) || (c > 1 && cw > 4.5) || (r > 1 && ch > 4.5)) continue;
+        if (Math.max(cw, ch) / Math.min(cw, ch) > 2.6 && c * r > 1) continue;
+        if (fixed.length && near(zoneGrid(z, c, r), fixed, 0.8)) continue; // ближе 0,8 м к люстре — тесно
+        list.push([c, r, cw, ch]);
+      }
+      return list;
+    });
+    // одинаковые зоны (обе «ноги» П-комнаты) обязаны получить одинаковую сетку — иначе несимметрично
+    var twin = zs.map(function (z, j) {
+      for (var i = 0; i < j; i++) { var o = zs[i]; if (Math.abs((o.x1 - o.x0) - (z.x1 - z.x0)) < 1e-6 && Math.abs((o.y1 - o.y0) - (z.y1 - z.y0)) < 1e-6) return i; }
+      return -1;
+    });
+    var byN = {};
+    (function rec(i, acc) {
+      if (i < zs.length && twin[i] >= 0) {
+        var t = acc[twin[i]], same = per[i].filter(function (a) { return a[0] === t[0] && a[1] === t[1]; });
+        same.forEach(function (a) { rec(i + 1, acc.concat([a])); });
+        return;
+      }
+      if (i === zs.length) {
+        var N = 0, st = []; acc.forEach(function (a) { N += a[0] * a[1]; if (a[0] > 1) st.push(a[2]); if (a[1] > 1) st.push(a[3]); });
+        if (N > 60) return;
+        if (!st.length) acc.forEach(function (a) { st.push(Math.min(a[2], a[3])); });
+        var mean = st.reduce(function (s, v) { return s + v; }, 0) / st.length, score = (Math.max.apply(null, st) - Math.min.apply(null, st)) / mean;
+        if (score > 0.75) return;
+        var mis = misalign(zs, acc) / mean; // ряды/колонки соседних зон на одной линии — аккуратнее
+        var tot = score + 0.8 * mis;
+        if (!byN[N] || tot < byN[N].score) byN[N] = { n: N, cfg: acc.map(function (a) { return [a[0], a[1]]; }), score: tot, neat: score <= 0.5 && mis <= 0.12 };
+        return;
+      }
+      per[i].forEach(function (a) { rec(i + 1, acc.concat([a])); });
+    })(0, []);
+    return Object.keys(byN).map(function (k) {
+      var o = byN[k]; o.pts = [].concat.apply([], zs.map(function (z, i) { return zoneGrid(z, o.cfg[i][0], o.cfg[i][1]); })); return o;
+    }).sort(function (p, q) { return p.n - q.n; });
+  }
+  // Насколько ряды (y) зон, стоящих бок о бок, и колонки (x) зон, стоящих друг над другом, не совпадают (м)
+  function misalign(zs, acc) {
+    var tot = 0, cnt = 0;
+    function lines(z, a, ax) { var n = ax ? a[1] : a[0], lo = ax ? z.y0 : z.x0, L = ax ? z.y1 - z.y0 : z.x1 - z.x0, o = []; for (var i = 0; i < n; i++) o.push(lo + L * (i + 0.5) / n); return o; }
+    for (var i = 0; i < zs.length; i++) for (var j = i + 1; j < zs.length; j++) {
+      var A = zs[i], B = zs[j];
+      [[1, Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0)], [0, Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0)]].forEach(function (t) {
+        if (t[1] <= 0.3) return; // зоны не соседствуют по этой оси
+        var la = lines(A, acc[i], t[0]), lb = lines(B, acc[j], t[0]), sm = la.length <= lb.length ? la : lb, bg = sm === la ? lb : la;
+        sm.forEach(function (v) { tot += Math.min.apply(null, bg.map(function (u) { return Math.abs(u - v); })); cnt++; });
+      });
+    }
+    return cnt ? tot / cnt : 0;
+  }
+  function symOptionsShared(zs, fixed) {
+    var seen = {}, out = [];
+    for (var s = 4; s >= 0.45; s -= 0.02) {
+      var cfg = zs.map(function (z) {
+        var w = z.x1 - z.x0, h = z.y1 - z.y0, c = Math.max(1, Math.round(w / s)), r = Math.max(1, Math.round(h / s));
+        if (fixed.length && near(zoneGrid(z, c, r), fixed, 0.6)) { // освобождаем место под люстрой: делаем чётным
+          var opts = [[c + (c % 2), r], [c, r + (r % 2)], [c + (c % 2), r + (r % 2)], [Math.max(2, c - (c % 2)), r]];
+          var ok = opts.filter(function (o) { return !near(zoneGrid(z, o[0], o[1]), fixed, 0.6); });
+          ok.sort(function (p, q) { return Math.abs(w / p[0] - h / p[1]) - Math.abs(w / q[0] - h / q[1]); });
+          if (ok.length) { c = ok[0][0]; r = ok[0][1]; }
+        }
+        return [c, r];
+      });
+      var N = cfg.reduce(function (t, c) { return t + c[0] * c[1]; }, 0), key = JSON.stringify(cfg);
+      if (seen[key]) continue; seen[key] = 1;
+      // «квадратность» ячеек: чем ближе шаг по x и y и между зонами, тем аккуратнее
+      var steps = []; zs.forEach(function (z, i) { steps.push((z.x1 - z.x0) / cfg[i][0], (z.y1 - z.y0) / cfg[i][1]); });
+      var score = (Math.max.apply(null, steps) - Math.min.apply(null, steps)) / s;
+      out.push({ n: N, cfg: cfg, s: s, score: score, neat: score <= 0.5, pts: [].concat.apply([], zs.map(function (z, i) { return zoneGrid(z, cfg[i][0], cfg[i][1]); })) });
+    }
+    // на одно и то же число — самый аккуратный вариант
+    var byN = {}; out.forEach(function (o) { if (!byN[o.n] || o.score < byN[o.n].score) byN[o.n] = o; });
+    return Object.keys(byN).map(function (k) { return byN[k]; }).sort(function (p, q) { return p.n - q.n; });
+  }
+  // Ближайший симметричный вариант к n (при равенстве — больше). Меньше светильников, чем зон: центры главных зон.
+  function symLayout(poly, n, opt) {
+    var zs = zones(poly); if (!zs) return null;
+    var fixed = opt && opt.fixed || [];
+    if (n <= zs.length && !fixed.length) return { pts: zs.slice(0, n).map(function (z) { return [(z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2]; }), n: n };
+    var all = symOptions(poly, fixed); if (!all || !all.length) return null;
+    // «аккуратные» варианты (ровный шаг, ряды зон на одной линии); если ровно n не выходит — ближайший больше
+    // 1) аккуратный не меньше n (если не слишком далеко); 2) любой не меньше n (чуть менее ровный);
+    // 3) только если больше n ничего нет — самый большой из возможных
+    var neat = all.filter(function (o) { return o.neat; }), pool = neat;
+    var neatUp = neat.filter(function (o) { return o.n >= n; })[0], allUp = all.filter(function (o) { return o.n >= n; })[0], best;
+    if (neatUp && neatUp.n <= n * 1.35 + 1) best = neatUp;
+    else if (allUp) { best = allUp; pool = all; }
+    else { pool = neat.length ? neat : all; best = pool[pool.length - 1]; }
+    return { pts: best.pts, n: best.n, cfg: best.cfg, options: pool.map(function (o) { return o.n; }) };
   }
   // Прямоугольник: ровная симметричная сетка (так ставят дизайнеры); из вариантов рядов×колонок берём
   // самый пропорциональный, где ни одна точка не ближе 0,6 м к уже стоящему светильнику (люстре)
@@ -437,7 +585,7 @@
 
   var api = {
     rect: rect, lshape: lshape, ushape: ushape, area: area, perimeter: perimeter, bbox: bbox, inside: inside,
-    distToEdges: distToEdges, blocked: blocked, isSimple: isSimple, snapToWall: snapToWall, surfaces: surfaces, directAt: directAt, TYPES: TYPES, intensity: intensity, compute: compute,
+    distToEdges: distToEdges, blocked: blocked, isSimple: isSimple, snapToWall: snapToWall, zones: zones, symOptions: symOptions, symLayout: symLayout, surfaces: surfaces, directAt: directAt, TYPES: TYPES, intensity: intensity, compute: compute,
     isolines: isolines, layout: layout, gridDims: gridDims, uOf: uOf, clamp: clamp
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

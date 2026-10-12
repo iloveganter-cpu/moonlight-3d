@@ -68,6 +68,7 @@
     '.mlp .sum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}' +
     '.mlp .sum div{background:var(--soft);border-radius:8px;padding:12px}' +
     '.mlp .sum b{display:block;font-size:24px;font-weight:600;line-height:1.1}.mlp .sum span{font-size:12px;color:var(--mute)}' +
+    '.mlp .hint.note{color:#8a5a00;background:#fff3e0;border-radius:6px;padding:6px 8px}.mlp .rec{margin-top:10px;padding:12px 14px;border-radius:8px;background:#e3f2fd;font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}.mlp .rec[hidden]{display:none}.mlp .rec span{flex:1;min-width:200px}' +
     '.mlp .verdict{margin-top:12px;padding:12px 14px;border-radius:8px;font-size:14px}' +
     '.mlp .verdict.good{background:#e8f5e9}.mlp .verdict.warn{background:#fff3e0}.mlp .verdict.bad{background:#ffebee}' +
     '.mlp .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}' +
@@ -107,7 +108,7 @@
         '<div class="hint" id="mlp-hint2d">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок или двойное касание угла.</div>' +
         '<div class="hint" id="mlp-hint3d" hidden>Вращайте мышью или пальцем, колесо или два пальца — приближение. Ближние стены и потолок скрываются, чтобы было видно комнату. Яркость поверхностей — из расчёта; двигать светильники — на вкладке «План».</div>' +
       '</div>' +
-      '<div class="sum" id="mlp-sum"></div><div class="verdict" id="mlp-verdict"></div>' +
+      '<div class="sum" id="mlp-sum"></div><div class="verdict" id="mlp-verdict"></div><div class="rec" id="mlp-rec" hidden></div>' +
       '<div class="acts"><button type="button" class="btn" id="mlp-pdf">Скачать расчёт в PDF</button><a class="btn wa" id="mlp-wa" target="_blank" rel="noopener">Обсудить с консультантом в WhatsApp</a></div>' +
       '<p class="note">Ориентировочный расчёт по типовым кривым света с учётом отражения от стен и потолка, статистика без полосы 0,5 м у стен. Не заменяет проект в DIALux — для него обратитесь к нам.</p>' +
     '</div></div>';
@@ -168,14 +169,36 @@
   function letterOf(g) { return String.fromCharCode(65 + st.groups.indexOf(g)); }
   // Люстры и плафоны — основной свет, встают по центру сами по себе; споты обходят уже стоящие потолочные светильники
   function isMain(g) { return g.type === 'pendant' || g.type === 'ceiling'; }
-  function relayout(g) {
+  function fixedFor(g) {
     var fixed = [];
     if (!isMain(g)) st.groups.forEach(function (o) { if (o !== g && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
-    g.pos = M.layout(makePoly(), Math.max(0, Math.round(g.count)), M.TYPES[g.type].mount, { fixed: fixed });
+    return fixed;
+  }
+  // Симметричная схема по зонам комнаты; если ровно столько светильников симметрично не встаёт —
+  // ставим ближайшее симметричное количество (больше) и пишем об этом в карточке группы
+  function relayout(g) {
+    var n = Math.max(0, Math.round(g.count)), poly = makePoly(); g.note = '';
+    if (M.TYPES[g.type].mount === 'wall' || n === 0) { g.pos = M.layout(poly, n, M.TYPES[g.type].mount); return; }
+    var sym = M.symLayout(poly, n, { fixed: fixedFor(g) });
+    if (!sym) { g.pos = M.layout(poly, n, 'ceiling', { fixed: fixedFor(g) }); g.note = 'Стены не под прямым углом — расставлено равномерно по площади.'; return; }
+    g.pos = sym.pts;
+    if (sym.n !== n) {
+      var around = sym.options.filter(function (k) { return Math.abs(k - n) <= Math.max(3, n * 0.5); });
+      g.note = 'Ровно ' + n + ' симметрично не встаёт — поставлено ' + sym.n + '. Аккуратные варианты: ' + around.join(', ') + '.';
+      g.count = sym.n;
+    }
+  }
+  // Стрелки в поле «Сколько шт.» — сразу к следующему симметричному варианту
+  function stepCount(g, dir) {
+    var sym = M.symLayout(makePoly(), Math.max(1, g.count), { fixed: fixedFor(g) });
+    if (!sym || !sym.options) return g.count + dir;
+    var o = sym.options.filter(function (k) { return dir > 0 ? k > g.count : k < g.count; });
+    return o.length ? (dir > 0 ? o[0] : o[o.length - 1]) : (dir > 0 ? g.count + 1 : Math.max(0, g.count - 1));
   }
   function relayoutAll() {
     st.groups.forEach(function (g) { g.pos = []; });
     st.groups.filter(isMain).concat(st.groups.filter(function (g) { return !isMain(g); })).forEach(relayout);
+    renderGroups(); // количество могло подстроиться под симметрию — обновляем поля и заметки
     update();
   }
 
@@ -196,6 +219,7 @@
               : '<div><label>Свес, м</label><input data-f="drop" type="number" min="0" step="0.05" value="' + g.drop + '"></div>') +
         (g.type === 'spot' ? '<div><label>Угол луча, °</label><input data-f="beam" type="number" min="8" max="150" step="1" value="' + g.beam + '"></div>' : '<div></div>') + '</div>' +
         (g.type === 'pendant' || g.type === 'wall' ? '<div class="hint">В карточке часто указана <b>максимальная</b> мощность патрона («5×40 Вт E14») — это не мощность лампы. LED-лампа E14 обычно 5–7 Вт, E27 — 8–12 Вт.</div>' : '') +
+        '<div class="hint note" data-note' + (g.note ? '' : ' hidden') + '>' + esc(g.note || '') + '</div>' +
         '<div class="hint" data-info></div></div>';
     }).join('') || '<div class="hint">Добавьте светильник.</div>';
     updateGroupInfo();
@@ -250,6 +274,55 @@
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
     if (view3d && !fast) refresh3d();
+    if (!fast) { clearTimeout(recT); recT = setTimeout(recommend, 350); }
+  }
+
+  // ---------- Рекомендация: сколько светильников нужно в симметричной схеме ----------
+  // Если света мало или он неровный — перебираем симметричные варианты для спотов (или предлагаем добавить споты)
+  // и ищем наименьшее количество, при котором средняя ≥ нормы и равномерность ≥ 0,4.
+  var recT = 0, recApply = null;
+  function cfgText(sym) {
+    if (!sym || !sym.cfg) return '';
+    var one = function (c) { return c[1] > 1 ? c[1] + ' ' + plural(c[1], 'ряд', 'ряда', 'рядов') + ' по ' + c[0] : 'в ряд'; };
+    return sym.cfg.length === 1 ? one(sym.cfg[0]) : 'по зонам: ' + sym.cfg.map(function (c) { return c[0] * c[1]; }).join(' + ');
+  }
+  function recommend() {
+    var box = $('mlp-rec'); recApply = null; box.hidden = true;
+    if (!res || drag) return;
+    if (res.active && res.avg >= st.E * 0.9 && res.u0 >= 0.4) return;
+    var poly = makePoly(), room = { poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] };
+    var tg = st.groups.filter(function (g) { return g.on !== false && !isMain(g) && M.TYPES[g.type].mount !== 'wall'; }).pop(), isNew = !tg;
+    if (isNew) { tg = { id: -1, type: 'spot', pos: [], eff: 0, on: true }; for (var k in DEF.spot) tg[k] = DEF.spot[k]; }
+    var fixed = []; st.groups.forEach(function (o) { if (o !== tg && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
+    var cur = tg.pos.length, opts = M.symOptions(poly, fixed), cands;
+    if (opts) {
+      var neat = opts.filter(function (o) { return o.neat && o.n > cur; }), rest = opts.filter(function (o) { return !o.neat && o.n > cur; });
+      cands = neat.slice(0, 12).concat(rest.slice(0, 8));
+    } else {
+      cands = []; for (var n = cur + 1; n <= cur + 12; n++) cands.push({ n: n, pts: M.layout(poly, n, 'ceiling', { fixed: fixed }) });
+    }
+    var others = lumsAll().filter(function (l) { return l.g !== tg; }), found = null, last = null;
+    for (var i = 0; i < cands.length && !found; i++) {
+      var c = cands[i], test = others.concat(c.pts.map(function (p) { return { x: p[0], y: p[1], z: lumZ(tg), flux: lumFlux(tg), type: tg.type, beam: tg.beam }; }));
+      var r = M.compute(room, test, { fast: true }); last = { c: c, r: r };
+      if (r.avg >= st.E && r.u0 >= 0.4) { r = M.compute(room, test); last = { c: c, r: r }; if (r.avg >= st.E && r.u0 >= 0.4) found = last; } // перепроверка точным расчётом
+    }
+    var name = M.TYPES[tg.type].name.toLowerCase(), txt, btn = '';
+    if (found) {
+      var N = found.c.n, sym = found.c;
+      txt = (isNew ? 'Добавьте ' + N + ' ' + plural(N, 'спот', 'спота', 'спотов') + ' (' + fmt(lumWatts(tg), 1) + ' Вт)' : 'Поставьте ' + N + ' вместо ' + cur + ' в группе ' + letterOf(tg) + ' (' + name + ')') +
+        (sym.cfg ? ', ' + cfgText(sym) : '') + ' — будет в среднем ' + fmt(found.r.avg) + ' лк, минимум ' + fmt(found.r.min) + ' лк, равномерность ' + fmt(found.r.u0, 2) + '.';
+      btn = '<button type="button" class="btn small" id="mlp-rec-go">Применить</button>';
+      recApply = function () {
+        var g = tg;
+        if (isNew) { addGroup('spot'); g = st.groups[st.groups.length - 1]; }
+        g.count = N; g.pos = found.c.pts.map(function (p) { return p.slice(); }); g.note = '';
+        renderGroups(); update();
+      };
+    } else if (last && last.r.avg < st.E) {
+      txt = 'Даже ' + last.c.n + ' светильников группы ' + (isNew ? 'споты' : letterOf(tg)) + ' не дотягивают до нормы — выберите модели мощнее (нужно примерно в ' + fmt(st.E / Math.max(1, last.r.avg) * 1.05, 1) + ' раза больше света).';
+    } else return;
+    box.innerHTML = '<span><b>Рекомендация:</b> ' + esc(txt) + '</span>' + btn; box.hidden = false;
   }
 
   // ---------- 3D ----------
@@ -426,6 +499,7 @@
     var mb = e.target.closest('[data-m3]');
     if (mb) { mode3d = mb.dataset.m3; root.querySelectorAll('[data-m3]').forEach(function (x) { x.classList.toggle('on', x === mb); }); $('mlp-legend').hidden = mode3d === 'real'; refresh3d(); return; }
     if (e.target.closest('#mlp-cam')) { refresh3d(true); return; }
+    if (e.target.closest('#mlp-rec-go')) { if (recApply) recApply(); return; }
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
     var del = e.target.closest('[data-del]');
@@ -445,8 +519,15 @@
       if (f === 'type') { g.type = t.value; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); g.eff = DEF_LAMP[g.type]; relayout(g); renderGroups(); update(); return; }
       if (f === 'on') { g.on = t.checked; update(); return; }
       if (f === 'mode') { g.mode = t.value; renderGroups(); update(); return; }
+      if (f === 'count') {
+        var v = Math.max(0, Math.min(60, Math.round(num(t.value))));
+        if (e.type === 'input' && Math.abs(v - g.count) === 1 && M.TYPES[g.type].mount !== 'wall') v = stepCount(g, v - g.count); // стрелки
+        g.count = v; relayout(g);
+        if (e.type === 'change' || Math.abs(g.count - v) === 0) t.value = g.count; // при наборе с клавиатуры поле правим по выходу
+        var nt = t.closest('.grp').querySelector('[data-note]'); if (nt) { nt.textContent = g.note || ''; nt.hidden = !g.note; }
+        update(); return;
+      }
       g[f] = num(t.value);
-      if (f === 'count') { g.count = Math.max(0, Math.min(60, Math.round(g.count))); relayout(g); }
       updateGroupInfo(); update();
     }
   }

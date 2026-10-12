@@ -45,6 +45,9 @@
     '.mlp .grp{border:1px solid var(--line);border-left:4px solid #000;border-radius:6px;padding:10px;margin-bottom:10px}' +
     '.mlp .grp-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}' +
     '.mlp .tag{width:22px;height:22px;border-radius:50%;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}' +
+    '.mlp .sw{position:relative;display:inline-block;width:34px;height:20px;margin:0;flex:none;cursor:pointer}.mlp .sw input{opacity:0;width:0;height:0;position:absolute}' +
+    '.mlp .sw span{position:absolute;inset:0;background:#ccc;border-radius:10px;transition:.15s}.mlp .sw span:before{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s}' +
+    '.mlp .sw input:checked+span{background:#000}.mlp .sw input:checked+span:before{transform:translateX(14px)}' +
     '.mlp .x{border:0;background:none;font-size:20px;line-height:1;cursor:pointer;color:#999;padding:0 4px}' +
     '.mlp .btn{display:inline-flex;align-items:center;justify-content:center;height:42px;padding:0 18px;border:0;border-radius:6px;background:#000;color:#fff;font:inherit;font-size:14px;cursor:pointer;text-decoration:none}' +
     '.mlp .btn.ghost{background:#fff;color:#000;border:1px solid #000}.mlp .btn.wa{background:#25d366;color:#fff}' +
@@ -151,7 +154,7 @@
   var LAMPS = [['LED-лампа', 90], ['Встроенный LED', 70], ['Лампа накаливания', 12], ['Галогенная', 16]];
   var DEF_LAMP = { pendant: 0, ceiling: 1, spot: 0, wall: 0 };
   function addGroup(type) {
-    var d = DEF[type], g = { id: ++st.gid, type: type, pos: [], eff: DEF_LAMP[type] };
+    var d = DEF[type], g = { id: ++st.gid, type: type, pos: [], eff: DEF_LAMP[type], on: true };
     for (var k in d) g[k] = d[k];
     if (g.mountH == null) g.mountH = 1.8;
     st.groups.push(g); relayout(g);
@@ -172,6 +175,7 @@
       return '<div class="grp" data-g="' + g.id + '" style="border-left-color:' + c + '">' +
         '<div class="grp-h"><span class="tag" style="background:' + c + '">' + letterOf(g) + '</span>' +
         '<select data-f="type">' + Object.keys(M.TYPES).map(function (k) { return '<option value="' + k + '"' + (k === g.type ? ' selected' : '') + '>' + M.TYPES[k].name + '</option>'; }).join('') + '</select>' +
+        '<label class="sw" title="Включить / выключить группу — чтобы увидеть вклад каждой"><input type="checkbox" data-f="on"' + (g.on !== false ? ' checked' : '') + '><span></span></label>' +
         '<button type="button" class="x" data-del title="Убрать">×</button></div>' +
         '<div class="row three"><div><label>Сколько шт.</label><input data-f="count" type="number" min="0" max="60" step="1" value="' + g.count + '"></div>' +
         '<div><label>Ламп в одном</label><input data-f="lamps" type="number" min="1" step="1" value="' + g.lamps + '"></div>' +
@@ -194,10 +198,11 @@
   }
 
   // ---------- Расчёт и сводка ----------
-  function lumsAll() {
+  function lumsAll(withOff) {
     var out = [];
     st.groups.forEach(function (g) {
-      g.pos.forEach(function (p) { out.push({ x: p[0], y: p[1], z: lumZ(g), flux: lumFlux(g), type: g.type, beam: g.beam, g: g }); });
+      if (g.on === false && !withOff) return;
+      g.pos.forEach(function (p) { out.push({ x: p[0], y: p[1], z: lumZ(g), flux: lumFlux(g), type: g.type, beam: g.beam, g: g, off: g.on === false }); });
     });
     return out;
   }
@@ -213,8 +218,9 @@
       if (out) warn.push(out + ' ' + plural(out, 'светильник', 'светильника', 'светильников') + ' группы ' + letterOf(g) + ' за пределами комнаты (красные) — не учтены.');
       if (lumZ(g) <= st.wp + 0.05) { warn.push('Группа ' + letterOf(g) + ' висит ниже рабочей поверхности (уменьшите свес) — не учтена.'); return; }
       if (M.TYPES[g.type].mount === 'wall' && g.mountH > st.H - 0.05) warn.push('Бра группы ' + letterOf(g) + ' выше потолка — посчитаны под потолком.');
-      W += inRoom * lumWatts(g);
+      if (g.on !== false) W += inRoom * lumWatts(g);
     });
+    var offG = st.groups.filter(function (g) { return g.on === false && g.pos.length; }).map(letterOf);
     var kwh = W / 1000 * st.hours * 365, cost = kwh * st.tariff;
     res.W = W; res.kwh = kwh; res.cost = cost;
     $('mlp-sum').innerHTML =
@@ -229,6 +235,7 @@
     else if (res.avg > st.E * 1.8) { cls = 'warn'; txt = 'Света с большим запасом — можно взять модели слабее или поставить диммер.'; }
     else { cls = 'good'; txt = 'Норма выполнена: света достаточно и он распределён ровно.'; }
     if (warn.length) { txt = warn.join(' ') + ' ' + txt; if (cls === 'good') cls = 'warn'; }
+    if (offG.length) txt = 'Выключено: ' + offG.join(', ') + ' — показан свет только включённых групп. ' + txt;
     v.className = 'verdict ' + cls; v.textContent = txt;
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
@@ -250,7 +257,7 @@
   function refresh3d(refit) {
     if (!window.MLP3D || !window.MLP3D.ready()) return;
     var room = { poly: makePoly(), H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lums = lumsAll();
-    var vis = lums.filter(function (l) { return M.inside(l.x, l.y, room.poly); });
+    var vis = lumsAll(true).filter(function (l) { return M.inside(l.x, l.y, room.poly); });
     window.MLP3D.render({ poly: room.poly, H: st.H, wp: st.wp, refl: room.refl, res: res, surf: M.surfaces(room, lums, res), lums: vis,
       norm: st.E, mode: mode3d, colorAt: colorAt, scaleMax: scaleMax(), refit: refit });
   }
@@ -339,7 +346,7 @@
       var col = colorOf(gr), lt = letterOf(gr);
       gr.pos.forEach(function (p) {
         var ok = M.inside(p[0], p[1], poly), x = X(p[0]), y = Y(p[1]);
-        ctx.beginPath(); ctx.arc(x, y, 10, 0, 7); ctx.fillStyle = ok ? col : '#c62828'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, 7); ctx.fillStyle = !ok ? '#c62828' : gr.on === false ? '#bdbdbd' : col; ctx.fill();
         ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
         ctx.fillStyle = '#fff'; ctx.font = '700 11px Arial'; ctx.fillText(ok ? lt : '!', x, y + 0.5);
       });
@@ -426,6 +433,7 @@
     if (f) {
       var g = st.groups.filter(function (x) { return x.id === +t.closest('.grp').dataset.g; })[0]; if (!g) return;
       if (f === 'type') { g.type = t.value; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); g.eff = DEF_LAMP[g.type]; relayout(g); renderGroups(); update(); return; }
+      if (f === 'on') { g.on = t.checked; update(); return; }
       if (f === 'mode') { g.mode = t.value; renderGroups(); update(); return; }
       g[f] = num(t.value);
       if (f === 'count') { g.count = Math.max(0, Math.min(60, Math.round(g.count))); relayout(g); }
@@ -476,7 +484,7 @@
           [[fmt(res.avg) + ' лк', 'средняя (норма ' + fmt(st.E) + ')'], [fmt(res.min) + ' лк', 'минимум'], [fmt(res.u0, 2), 'равномерность'], [fmt(res.W) + ' Вт', 'мощность']].map(function (r) { return '<div><div style="font-size:24px;font-weight:700">' + r[0] + '</div><div style="color:#555">' + r[1] + '</div></div>'; }).join('') + '</div>' +
         '<div style="padding:8px 12px;background:#f4f4f4;border-radius:6px;margin-bottom:14px">' + esc($('mlp-verdict').textContent) + '</div>' +
         tbl([['Помещение', roomText()], ['Рабочая поверхность', fmt(st.wp, 2) + ' м'], ['Отделка', REFL[st.refl][0]], ['Условия', KZ[st.kz][0]], ['Электричество', fmt(res.kwh) + ' кВт·ч/год ≈ ' + fmt(res.cost) + ' сом (' + fmt(st.hours, 1) + ' ч/день)']].concat(
-          st.groups.map(function (g) { return ['Группа ' + letterOf(g), g.pos.length + ' шт. · ' + M.TYPES[g.type].name + ' · ' + fmt(lumFlux(g)) + ' лм / ' + fmt(lumWatts(g), 1) + ' Вт']; }))) +
+          st.groups.map(function (g) { return ['Группа ' + letterOf(g) + (g.on === false ? ' (выключена)' : ''), g.pos.length + ' шт. · ' + M.TYPES[g.type].name + ' · ' + fmt(lumFlux(g)) + ' лм / ' + fmt(lumWatts(g), 1) + ' Вт']; }))) +
         '<div style="color:#777;font-size:11px">Ориентировочный расчёт по типовым кривым света (точечный метод с учётом отражений). Не заменяет светотехнический проект.</div>';
       document.body.appendChild(box);
       return window.html2canvas(box, { scale: 2, backgroundColor: '#fff' }).then(function (c) {

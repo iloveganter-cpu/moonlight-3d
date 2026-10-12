@@ -115,8 +115,10 @@
 
     // светильники: простые формы + свечение
     var bodyM = new T.MeshBasicMaterial({ color: 0x2b2b2b }), lightM = new T.MeshBasicMaterial({ color: 0xfff4d8 });
+    var offM = new T.MeshBasicMaterial({ color: 0xd8d8d8 });
     d.lums.forEach(function (l) {
-      var o = new T.Group(), z = l.z;
+      var o = new T.Group(), z = l.z, lightM0 = lightM;
+      if (l.off) lightM = offM; // выключенная группа — без свечения
       if (l.type === 'pendant') {
         var cord = new T.Mesh(new T.CylinderGeometry(0.006, 0.006, Math.max(0.01, H - z), 6), bodyM); cord.position.y = (H + z) / 2; o.add(cord);
         var sh = new T.Mesh(new T.SphereGeometry(0.16, 20, 14), lightM); sh.position.y = z; o.add(sh);
@@ -128,6 +130,8 @@
       } else {
         var br = new T.Mesh(new T.BoxGeometry(0.14, 0.22, 0.14), lightM); br.position.y = z; o.add(br);
       }
+      lightM = lightM0;
+      if (l.off) { o.position.set(l.x, 0, l.y); S.group.add(o); return; }
       var sz = Math.min(1.4, 0.35 + Math.sqrt(l.flux) / 70);
       var sp2 = new T.Sprite(new T.SpriteMaterial({ map: glowTex(), blending: T.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.8 }));
       sp2.scale.set(sz, sz, 1); sp2.position.y = l.type === 'pendant' || l.type === 'wall' ? z : z - 0.08; o.add(sp2);

@@ -3,6 +3,8 @@
 (function () {
   'use strict';
   var M = window.MLPEngine, root = document.getElementById('ml-planner');
+  // папка, откуда загружен planner.js (там же planner3d.js); ?v= сохраняем для обхода кэша
+  var SRC = (document.currentScript && document.currentScript.src) || '', BASE = SRC.replace(/[^\/]*$/, ''), VER = (SRC.match(/\?.*$/) || [''])[0];
   if (!M || !root || root.dataset.ready) return;
   root.dataset.ready = '1';
   root.className = 'mlp';
@@ -52,6 +54,11 @@
     '.mlp .legend{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute);margin-top:10px;flex-wrap:wrap}' +
     '.mlp .bar{flex:1;min-width:160px;height:10px;border-radius:5px}' +
     '.mlp .ticks{display:flex;justify-content:space-between;font-size:11px;color:var(--mute);margin:2px 0 0}' +
+    '.mlp .views{display:inline-flex;border:1px solid #ccc;border-radius:6px;overflow:hidden;margin-bottom:10px;background:#fff}' +
+    '.mlp .views button{height:32px;padding:0 18px;border:0;background:#fff;font:inherit;font-size:13px;cursor:pointer;color:#000}.mlp .views button.on{background:#000;color:#fff}' +
+    '.mlp .v3d{position:relative;width:100%;border-radius:6px;background:#eee;overflow:hidden}.mlp .v3d[hidden]{display:none}' +
+    '.mlp .v3d-msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#666;font-size:14px;text-align:center;padding:16px}' +
+    '.mlp .seg.two{grid-template-columns:1fr 1fr;margin:0;min-width:260px}.mlp [hidden]{display:none!important}' +
     '.mlp .tools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:13px}' +
     '.mlp .tools label{display:inline-flex;align-items:center;gap:6px;margin:0;color:var(--ink);font-size:13px}.mlp .tools input{width:auto;height:auto}' +
     '.mlp .hint{font-size:12px;color:var(--mute);margin-top:6px}' +
@@ -86,11 +93,16 @@
       '<div class="card"><h3>Электричество</h3><div class="row"><div><label>Часов в день</label><input data-k="hours" type="number" step="0.5" min="0" max="24"></div>' +
         '<div><label>Тариф, сом/кВт·ч</label><input data-k="tariff" type="number" step="0.01" min="0"></div></div></div>' +
     '</div><div class="main">' +
-      '<div class="plan"><canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
-        '<div class="legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
-        '<div class="tools"><button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
+      '<div class="plan"><div class="views"><button type="button" data-view="plan" class="on">План</button><button type="button" data-view="3d">3D</button></div>' +
+        '<canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
+        '<div id="mlp-3d" class="v3d" hidden><div class="v3d-msg" id="mlp-3dmsg">Загружаем 3D…</div></div>' +
+        '<div class="legend" id="mlp-legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
+        '<div class="tools" id="mlp-tools2d"><button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
           '<label><input type="checkbox" id="mlp-iso" checked> Линии равной освещённости</label></div>' +
-        '<div class="hint">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок или двойное касание угла.</div>' +
+        '<div class="tools" id="mlp-tools3d" hidden><div class="seg two"><button type="button" data-m3="real" class="on">Как будет выглядеть</button><button type="button" data-m3="map">Карта люксов</button></div>' +
+          '<button type="button" class="btn small ghost" id="mlp-cam">Сбросить вид</button></div>' +
+        '<div class="hint" id="mlp-hint2d">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок или двойное касание угла.</div>' +
+        '<div class="hint" id="mlp-hint3d" hidden>Вращайте мышью или пальцем, колесо или два пальца — приближение. Ближние стены и потолок скрываются, чтобы было видно комнату. Яркость поверхностей — из расчёта; двигать светильники — на вкладке «План».</div>' +
       '</div>' +
       '<div class="sum" id="mlp-sum"></div><div class="verdict" id="mlp-verdict"></div>' +
       '<div class="acts"><button type="button" class="btn" id="mlp-pdf">Скачать расчёт в PDF</button><a class="btn wa" id="mlp-wa" target="_blank" rel="noopener">Обсудить с консультантом в WhatsApp</a></div>' +
@@ -220,6 +232,36 @@
     v.className = 'verdict ' + cls; v.textContent = txt;
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
+    if (view3d && !fast) refresh3d();
+  }
+
+  // ---------- 3D ----------
+  var view3d = false, mode3d = 'real', loading3d = null;
+  function loadScript(src) { return new Promise(function (ok, no) { var s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+  function ensure3d() {
+    if (loading3d) return loading3d;
+    var p = Promise.resolve();
+    if (!window.THREE) p = p.then(function () { return loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js'); });
+    p = p.then(function () { return window.THREE.OrbitControls ? 0 : loadScript('https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/controls/OrbitControls.js'); })
+      .then(function () { return window.MLP3D ? 0 : loadScript(BASE + 'planner3d.js' + VER); })
+      .then(function () { $('mlp-3dmsg').remove(); window.MLP3D.init($('mlp-3d')); });
+    return (loading3d = p.catch(function () { loading3d = null; $('mlp-3dmsg').textContent = 'Не удалось загрузить 3D. Проверьте интернет и откройте вкладку ещё раз.'; throw 0; }));
+  }
+  function refresh3d(refit) {
+    if (!window.MLP3D || !window.MLP3D.ready()) return;
+    var room = { poly: makePoly(), H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lums = lumsAll();
+    var vis = lums.filter(function (l) { return M.inside(l.x, l.y, room.poly); });
+    window.MLP3D.render({ poly: room.poly, H: st.H, wp: st.wp, refl: room.refl, res: res, surf: M.surfaces(room, lums, res), lums: vis,
+      norm: st.E, mode: mode3d, colorAt: colorAt, scaleMax: scaleMax(), refit: refit });
+  }
+  function setView(v) {
+    view3d = v === '3d';
+    root.querySelectorAll('.views button').forEach(function (b) { b.classList.toggle('on', b.dataset.view === v); });
+    $('mlp-3d').style.height = Math.max(320, cv.clientHeight || 420) + 'px';
+    cv.hidden = view3d; $('mlp-3d').hidden = !view3d;
+    $('mlp-tools2d').hidden = $('mlp-hint2d').hidden = view3d; $('mlp-tools3d').hidden = $('mlp-hint3d').hidden = !view3d;
+    $('mlp-legend').hidden = view3d && mode3d === 'real';
+    if (view3d) ensure3d().then(function () { refresh3d(); }, function () {}); else draw();
   }
 
   // ---------- Рисование ----------
@@ -363,6 +405,10 @@
   // ---------- Ввод ----------
   root.addEventListener('click', function (e) {
     var b = e.target.closest('[data-shape]'); if (b) { setShape(b.dataset.shape); return; }
+    var vb = e.target.closest('[data-view]'); if (vb) { setView(vb.dataset.view); return; }
+    var mb = e.target.closest('[data-m3]');
+    if (mb) { mode3d = mb.dataset.m3; root.querySelectorAll('[data-m3]').forEach(function (x) { x.classList.toggle('on', x === mb); }); $('mlp-legend').hidden = mode3d === 'real'; refresh3d(); return; }
+    if (e.target.closest('#mlp-cam')) { refresh3d(true); return; }
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
     var del = e.target.closest('[data-del]');
@@ -415,10 +461,15 @@
       var box = document.createElement('div'), d = new Date().toLocaleDateString('ru-RU');
       box.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;padding:36px;background:#fff;color:#000;font:13px Arial,sans-serif;line-height:1.45';
       function tbl(rs) { return '<table style="width:100%;border-collapse:collapse;margin:6px 0 18px">' + rs.map(function (r) { return '<tr><td style="padding:5px 0;border-bottom:1px solid #ddd;color:#555">' + esc(r[0]) + '</td><td style="padding:5px 0;border-bottom:1px solid #ddd;text-align:right;font-weight:600">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }
-      draw(true); var plan = cv.toDataURL('image/png'), ratio = cv.height / cv.width, iw = 688, ih = Math.min(560, iw * ratio); draw();
+      var was3d = view3d; if (was3d) { cv.hidden = false; } // план рисуется только на видимом холсте
+      draw(true); var plan = cv.toDataURL('image/png'), ratio = cv.height / cv.width; draw();
+      if (was3d) cv.hidden = true;
+      var shot = window.MLP3D && window.MLP3D.ready() ? window.MLP3D.snapshot() : null; // 3D — если его открывали
+      var iw = shot ? 340 : 688, ih = Math.min(shot ? 300 : 560, iw * ratio), pw = ih < iw * ratio ? ih / ratio : iw;
       box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:22px;font-weight:700">Moonlight</div><div style="color:#555">moonlight-kg.store · ' + d + '</div></div>' +
         '<div style="font-size:19px;font-weight:600;margin:18px 0 10px">План освещения</div>' +
-        '<img src="' + plan + '" style="display:block;width:' + (ih < iw * ratio ? ih / ratio : iw) + 'px;height:' + ih + 'px;margin:0 auto 6px">' +
+        '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:6px"><img src="' + plan + '" style="display:block;width:' + pw + 'px;height:' + ih + 'px">' +
+        (shot ? '<img src="' + shot + '" style="display:block;width:340px;height:' + ih + 'px;object-fit:cover;border-radius:6px">' : '') + '</div>' +
         '<div style="height:8px;border-radius:4px;background:' + $('mlp-bar').style.background + '"></div>' +
         '<div style="display:flex;justify-content:space-between;color:#555;font-size:11px;margin:2px 0 14px">' + $('mlp-ticks').innerHTML + '</div>' +
         '<div style="display:flex;gap:28px;margin-bottom:10px">' +

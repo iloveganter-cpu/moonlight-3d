@@ -170,8 +170,48 @@
       grid: { nx: nx, ny: ny, x0: bb.x0, y0: bb.y0, sx: sx, sy: sy, E: E, mask: mask },
       avg: stats.avg, min: stats.min, max: Math.max(stats.max, all.max), u0: stats.avg ? stats.min / stats.avg : 0,
       area: S, indirect: Eind / room.kz, flux: Ftot, active: active.length,
+      reflected: ((A > 0 ? F1 / A : 0) + Eind) / room.kz, // средний отражённый свет на стенах/потолке (для 3D)
       balance: Fwp + patches.reduce(function (s, p) { return s + p.E * p.A; }, 0) // для проверки: поток, дошедший до поверхностей
     };
+  }
+
+  // Прямая освещённость точки любой поверхности (для 3D): точка (x,y,z), нормаль (nx,ny,nz) внутрь комнаты,
+  // (vx,vy) — точка на плане чуть внутри комнаты для проверки заслонения. lums — уже отфильтрованные.
+  function directAt(poly, convex, lums, x, y, z, nx, ny, nz, vx, vy) {
+    var e = 0;
+    for (var q = 0; q < lums.length; q++) {
+      var l = lums[q], dx = x - l.x, dy = y - l.y, dz = z - l.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 1e-6) continue;
+      var d = Math.sqrt(d2), ci = -(dx * nx + dy * ny + dz * nz) / d;
+      if (ci <= 0 || (!convex && blocked(l.x, l.y, vx, vy, poly))) continue;
+      e += l.flux * intensity(l.type, Math.acos(Math.max(-1, Math.min(1, -dz / d))), l.beam) * ci / (d2 + 0.01);
+    }
+    return e;
+  }
+  // Освещённость стен (сетка по каждой стене) и потолка для 3D-вида: прямой свет + равномерные отражения, с Кз
+  function surfaces(room, lums, res, opt) {
+    opt = opt || {};
+    var poly = room.poly, convex = isConvex(poly), H = room.H, kz = room.kz, add = res.reflected;
+    var act = lums.filter(function (l) { return l.flux > 0 && inside(l.x, l.y, poly) && l.z - room.wp > 0.05; });
+    var walls = [], du = opt.du || 0.1, rows = opt.rows || 24;
+    for (var i = 0, n = poly.length; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) continue;
+      var nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
+      if (!inside((a[0] + b[0]) / 2 + nx * 0.01, (a[1] + b[1]) / 2 + ny * 0.01, poly)) { nx = -nx; ny = -ny; }
+      var cols = Math.max(4, Math.round(L / du)), E = new Float32Array(cols * rows);
+      for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+        var u = (c + 0.5) / cols, x = a[0] + u * (b[0] - a[0]), y = a[1] + u * (b[1] - a[1]), z = (r + 0.5) * H / rows;
+        E[r * cols + c] = (directAt(poly, convex, act, x, y, z, nx, ny, 0, x + nx * 0.02, y + ny * 0.02) / kz) + add;
+      }
+      walls.push({ a: a, b: b, L: L, nx: nx, ny: ny, cols: cols, rows: rows, E: E });
+    }
+    var g = res.grid, C = new Float32Array(g.nx * g.ny);
+    for (var j = 0; j < g.ny; j++) for (var k = 0; k < g.nx; k++) {
+      var m = j * g.nx + k; if (!g.mask[m]) continue;
+      var px = g.x0 + (k + 0.5) * g.sx, py = g.y0 + (j + 0.5) * g.sy;
+      C[m] = directAt(poly, convex, act, px, py, H, 0, 0, -1, px, py) / kz + add;
+    }
+    return { walls: walls, ceiling: C };
   }
 
   // Контур без самопересечений (иначе площадь и «внутри/снаружи» неверны)
@@ -330,7 +370,7 @@
 
   var api = {
     rect: rect, lshape: lshape, ushape: ushape, area: area, perimeter: perimeter, bbox: bbox, inside: inside,
-    distToEdges: distToEdges, blocked: blocked, isSimple: isSimple, snapToWall: snapToWall, TYPES: TYPES, intensity: intensity, compute: compute,
+    distToEdges: distToEdges, blocked: blocked, isSimple: isSimple, snapToWall: snapToWall, surfaces: surfaces, directAt: directAt, TYPES: TYPES, intensity: intensity, compute: compute,
     isolines: isolines, layout: layout, gridDims: gridDims, uOf: uOf, clamp: clamp
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

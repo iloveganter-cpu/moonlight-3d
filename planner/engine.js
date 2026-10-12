@@ -73,8 +73,8 @@
   };
   function spotN(beamDeg) { var c = Math.cos(clamp(beamDeg, 8, 150) / 2 * Math.PI / 180); return Math.log(0.5) / Math.log(c); }
   function intensity(type, g, beamDeg) {
-    if (g >= Math.PI / 2) return 0;
     var t = TYPES[type] || TYPES.ceiling;
+    if (g >= Math.PI / 2) return (1 - t.down) / (2 * Math.PI); // верхняя полусфера (люстра, бра) — равномерно
     if (type === 'spot') { var n = spotN(beamDeg || 36); return (n + 1) / (2 * Math.PI) * Math.pow(Math.cos(g), n); }
     if (type === 'ceiling') return Math.cos(g) / Math.PI;
     return t.down / (2 * Math.PI); // люстра и бра: равномерно по нижней полусфере
@@ -85,34 +85,66 @@
   function compute(room, lums, opt) {
     opt = opt || {};
     var poly = room.poly, bb = bbox(poly), S = area(poly);
-    var step = opt.step || clamp(Math.sqrt(S) / 45, 0.05, 0.25);
+    var step = opt.step || clamp(Math.sqrt(S) / (opt.fast ? 28 : 45), 0.05, opt.fast ? 0.35 : 0.25); // fast — грубее, для перетаскивания
     var nx = Math.max(2, Math.round(bb.w / step)), ny = Math.max(2, Math.round(bb.h / step));
     var sx = bb.w / nx, sy = bb.h / ny;
     var E = new Float32Array(nx * ny), mask = new Uint8Array(nx * ny);
     var active = lums.filter(function (l) { return l.flux > 0 && inside(l.x, l.y, poly) && l.z - room.wp > 0.05; });
+    var convex = isConvex(poly);
+    function vis(ax, ay, bx, by) { return convex || !blocked(ax, ay, bx, by, poly); }
 
-    // 1) прямой свет
-    var sumD = 0, cnt = 0;
+    // 1) прямой свет на рабочую плоскость
+    var sumD = 0, cnt = 0, pts = [];
     for (var j = 0; j < ny; j++) for (var i = 0; i < nx; i++) {
       var x = bb.x0 + (i + 0.5) * sx, y = bb.y0 + (j + 0.5) * sy, k = j * nx + i;
       if (!inside(x, y, poly)) continue;
-      mask[k] = 1;
+      mask[k] = 1; pts.push(k);
       var e = 0;
       for (var q = 0; q < active.length; q++) {
         var l = active[q], h = l.z - room.wp, dx = x - l.x, dy = y - l.y, d2 = dx * dx + dy * dy + h * h, d = Math.sqrt(d2);
-        if (blocked(l.x, l.y, x, y, poly)) continue;
+        if (!vis(l.x, l.y, x, y)) continue;
         var cg = h / d;
         e += l.flux * intensity(l.type, Math.acos(cg), l.beam) * cg / d2;
       }
       E[k] = e; sumD += e; cnt++;
     }
-    // 2) межотражения — равномерная добавка: E_отр = Φ₁ / (A·(1−ρ)),
-    //    Φ₁ — первое отражение (поток на рабочую плоскость × ρ пола, остальной × ρ стен/потолка)
+
+    // 2) первое отражение от стен и потолка — по участкам, поэтому близкая светлая стена
+    //    даёт локальную подсветку. Участок получает свет от светильников и светит как матовая поверхность.
+    var r = room.refl, patches = surfacePatches(poly, room.H, S, bb);
+    patches.forEach(function (p) {
+      p.rho = p.ceil ? r[0] : r[1];
+      var e = 0;
+      for (var q = 0; q < active.length; q++) {
+        var l = active[q], dx = p.x - l.x, dy = p.y - l.y, dz = p.z - l.z, d2 = dx * dx + dy * dy + dz * dz, d = Math.sqrt(d2);
+        if (d < 1e-4) continue; // светильник вплотную к центру участка (накладной на потолке)
+        var ci = -(dx * p.nx + dy * p.ny + dz * p.nz) / d; // косинус падения на участок
+        if (ci <= 0 || !vis(l.x, l.y, p.vx, p.vy)) continue;
+        e += l.flux * intensity(l.type, Math.acos(Math.max(-1, Math.min(1, -dz / d))), l.beam) * ci / (d2 + p.A / Math.PI);
+      }
+      p.E = e; p.M = p.rho * e / Math.PI; // яркость (кд/м²)
+    });
+    var lit = patches.filter(function (p) { return p.M > 1e-6; });
+    for (var t = 0; t < pts.length; t++) {
+      var k2 = pts[t], x2 = bb.x0 + (k2 % nx + 0.5) * sx, y2 = bb.y0 + (Math.floor(k2 / nx) + 0.5) * sy, add = 0;
+      for (var u = 0; u < lit.length; u++) {
+        var p = lit[u], ddx = p.x - x2, ddy = p.y - y2, ddz = p.z - room.wp;
+        if (ddz <= 0) continue; // участки ниже рабочей плоскости её не освещают
+        var dd2 = ddx * ddx + ddy * ddy + ddz * ddz, dd = Math.sqrt(dd2);
+        var cp = -(ddx * p.nx + ddy * p.ny + ddz * p.nz) / dd; // косинус выхода с участка
+        if (cp <= 0 || !vis(p.vx, p.vy, x2, y2)) continue;
+        add += p.M * p.A * cp * (ddz / dd) / (dd2 + p.A / Math.PI + p.s * p.s); // + размер участка² — сглаживает «зубцы» у самой стены
+      }
+      E[k2] += add;
+    }
+
+    // 3) последующие отражения — равномерно: Φ₁·ρ / (A·(1−ρ)), Φ₁ — весь поток после первого отражения
     var P = perimeter(poly), Aw = P * room.H, A = 2 * S + Aw;
-    var r = room.refl, rho = (S * r[0] + Aw * r[1] + S * r[2]) / A, rhoCW = (S * r[0] + Aw * r[1]) / (S + Aw);
+    var rho = (S * r[0] + Aw * r[1] + S * r[2]) / A;
     var Ftot = active.reduce(function (s, l) { return s + l.flux; }, 0);
     var Fwp = Math.min(Ftot, cnt ? sumD / cnt * S : 0);
-    var Eind = A > 0 && rho < 1 ? (Fwp * r[2] + (Ftot - Fwp) * rhoCW) / (A * (1 - rho)) : 0;
+    var F1 = Fwp * r[2] + patches.reduce(function (s, p) { return s + p.rho * p.E * p.A; }, 0);
+    var Eind = A > 0 && rho < 1 ? F1 * rho / (A * (1 - rho)) : 0;
     for (var m = 0; m < E.length; m++) if (mask[m]) E[m] = (E[m] + Eind) / room.kz;
 
     // Статистика: как в EN 12464 — без полосы 0,5 м у стен (если комната позволяет)
@@ -130,8 +162,39 @@
     return {
       grid: { nx: nx, ny: ny, x0: bb.x0, y0: bb.y0, sx: sx, sy: sy, E: E, mask: mask },
       avg: stats.avg, min: stats.min, max: Math.max(stats.max, all.max), u0: stats.avg ? stats.min / stats.avg : 0,
-      area: S, indirect: Eind / room.kz, flux: Ftot, active: active.length
+      area: S, indirect: Eind / room.kz, flux: Ftot, active: active.length,
+      balance: Fwp + patches.reduce(function (s, p) { return s + p.E * p.A; }, 0) // для проверки: поток, дошедший до поверхностей
     };
+  }
+
+  function isConvex(poly) {
+    var sgn = 0;
+    for (var i = 0, n = poly.length; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n], c = poly[(i + 2) % n], z = cross(a[0], a[1], b[0], b[1], c[0], c[1]);
+      if (Math.abs(z) < 1e-9) continue;
+      if (!sgn) sgn = z > 0 ? 1 : -1; else if ((z > 0 ? 1 : -1) !== sgn) return false;
+    }
+    return true;
+  }
+  // Участки стен (полосы по высоте) и потолка: центр, внутренняя нормаль, площадь, точка для проверки видимости
+  function surfacePatches(poly, H, S, bb) {
+    var out = [], P = perimeter(poly), pw = Math.max(0.15, P / 120), rows = 5;
+    for (var i = 0, n = poly.length; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) continue;
+      var nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L, mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (!inside(mx + nx * 0.01, my + ny * 0.01, poly)) { nx = -nx; ny = -ny; }
+      var cols = Math.max(1, Math.round(L / pw));
+      for (var c = 0; c < cols; c++) {
+        var u = (c + 0.5) / cols, x = a[0] + u * (b[0] - a[0]), y = a[1] + u * (b[1] - a[1]);
+        for (var r = 0; r < rows; r++) out.push({ x: x, y: y, z: (r + 0.5) * H / rows, nx: nx, ny: ny, nz: 0, A: L / cols * H / rows, s: L / cols, vx: x + nx * 0.01, vy: y + ny * 0.01 });
+      }
+    }
+    var cs = clamp(Math.sqrt(S) / 10, 0.25, 0.6), cx = Math.max(1, Math.round(bb.w / cs)), cy = Math.max(1, Math.round(bb.h / cs));
+    for (var j = 0; j < cy; j++) for (var k = 0; k < cx; k++) {
+      var px = bb.x0 + bb.w * (k + 0.5) / cx, py = bb.y0 + bb.h * (j + 0.5) / cy;
+      if (inside(px, py, poly)) out.push({ x: px, y: py, z: H, nx: 0, ny: 0, nz: -1, A: bb.w / cx * bb.h / cy, s: 0, vx: px, vy: py, ceil: true });
+    }
+    return out;
   }
 
   // Изолинии (marching squares) по значениям в центрах ячеек; возвращает отрезки в метрах

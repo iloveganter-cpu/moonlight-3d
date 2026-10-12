@@ -94,7 +94,7 @@
       '</div>' +
       '<div class="sum" id="mlp-sum"></div><div class="verdict" id="mlp-verdict"></div>' +
       '<div class="acts"><button type="button" class="btn" id="mlp-pdf">Скачать расчёт в PDF</button><a class="btn wa" id="mlp-wa" target="_blank" rel="noopener">Обсудить с консультантом в WhatsApp</a></div>' +
-      '<p class="note">Ориентировочный расчёт по типовым кривым света (точечный метод + отражения), статистика без полосы 0,5 м у стен. Не заменяет проект в DIALux — для него обратитесь к нам.</p>' +
+      '<p class="note">Ориентировочный расчёт по типовым кривым света с учётом отражения от стен и потолка, статистика без полосы 0,5 м у стен. Не заменяет проект в DIALux — для него обратитесь к нам.</p>' +
     '</div></div>';
 
   function $(id) { return document.getElementById(id); }
@@ -181,9 +181,9 @@
     });
     return out;
   }
-  function update() {
+  function update(fast) {
     var poly = makePoly();
-    res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll());
+    res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
     if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
     var W = st.groups.reduce(function (s, g) { return s + g.pos.length * lumWatts(g); }, 0);
     var kwh = W / 1000 * st.hours * 365, cost = kwh * st.tariff;
@@ -300,7 +300,7 @@
     return best;
   }
   function toCustom() { if (st.shape !== 'custom') { st.poly = makePoly().map(function (p) { return p.slice(); }); st.shape = 'custom'; renderDims(); } }
-  var raf = 0; function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; update(); }); }
+  var raf = 0; function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; update(true); }); }
   cv.addEventListener('pointerdown', function (e) {
     if (!view) return; var pt = toM(e), h = hit(pt); if (!h) return;
     e.preventDefault(); cv.setPointerCapture(e.pointerId);

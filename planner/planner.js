@@ -90,7 +90,7 @@
         '<div class="legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
         '<div class="tools"><button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
           '<label><input type="checkbox" id="mlp-iso" checked> Линии равной освещённости</label></div>' +
-        '<div class="hint">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок по углу.</div>' +
+        '<div class="hint">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок или двойное касание угла.</div>' +
       '</div>' +
       '<div class="sum" id="mlp-sum"></div><div class="verdict" id="mlp-verdict"></div>' +
       '<div class="acts"><button type="button" class="btn" id="mlp-pdf">Скачать расчёт в PDF</button><a class="btn wa" id="mlp-wa" target="_blank" rel="noopener">Обсудить с консультантом в WhatsApp</a></div>' +
@@ -99,6 +99,7 @@
 
   function $(id) { return document.getElementById(id); }
   function num(v) { v = parseFloat(String(v).replace(',', '.')); return isFinite(v) ? v : 0; }
+  function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : (m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c); }
   function fmt(v, d) { return (+v).toLocaleString('ru-RU', { maximumFractionDigits: d || 0 }); }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -129,20 +130,25 @@
 
   // ---------- Светильники ----------
   var DEF = {
-    pendant: { count: 1, mode: 'w', watts: 10, lm: 900, lamps: 5, drop: 0.6, beam: 36 },
+    pendant: { count: 1, mode: 'w', watts: 7, lm: 600, lamps: 5, drop: 0.6, beam: 36 },
     ceiling: { count: 1, mode: 'w', watts: 40, lm: 3600, lamps: 1, drop: 0, beam: 36 },
     spot: { count: 6, mode: 'w', watts: 7, lm: 600, lamps: 1, drop: 0, beam: 36 },
     wall: { count: 2, mode: 'w', watts: 6, lm: 500, lamps: 1, drop: 0, beam: 36, mountH: 1.8 }
   };
+  // Световая отдача, лм/Вт. Встроенный LED в декоративных светильниках теряет часть света на рассеивателях.
+  var LAMPS = [['LED-лампа', 90], ['Встроенный LED', 70], ['Лампа накаливания', 12], ['Галогенная', 16]];
+  var DEF_LAMP = { pendant: 0, ceiling: 1, spot: 0, wall: 0 };
   function addGroup(type) {
-    var d = DEF[type], g = { id: ++st.gid, type: type, pos: [] };
+    var d = DEF[type], g = { id: ++st.gid, type: type, pos: [], eff: DEF_LAMP[type] };
     for (var k in d) g[k] = d[k];
     if (g.mountH == null) g.mountH = 1.8;
     st.groups.push(g); relayout(g);
   }
-  function lumFlux(g) { return g.lamps * (g.mode === 'w' ? g.watts * LMW : g.lm); }
-  function lumWatts(g) { return g.lamps * (g.mode === 'w' ? g.watts : g.lm / LMW); }
-  function lumZ(g) { return M.TYPES[g.type].mount === 'wall' ? g.mountH : st.H - g.drop; }
+  function effOf(g) { return LAMPS[g.eff || 0][1]; }
+  function lumFlux(g) { return g.lamps * (g.mode === 'w' ? g.watts * effOf(g) : g.lm); }
+  function lumWatts(g) { return g.lamps * (g.mode === 'w' ? g.watts : g.lm / effOf(g)); }
+  // бра не может висеть выше потолка
+  function lumZ(g) { return M.TYPES[g.type].mount === 'wall' ? Math.min(g.mountH, st.H - 0.05) : st.H - g.drop; }
   function colorOf(g) { return COLORS[(st.groups.indexOf(g)) % COLORS.length]; }
   function letterOf(g) { return String.fromCharCode(65 + st.groups.indexOf(g)); }
   function relayout(g) { g.pos = M.layout(makePoly(), Math.max(0, Math.round(g.count)), M.TYPES[g.type].mount); }
@@ -157,11 +163,13 @@
         '<button type="button" class="x" data-del title="Убрать">×</button></div>' +
         '<div class="row three"><div><label>Сколько шт.</label><input data-f="count" type="number" min="0" max="60" step="1" value="' + g.count + '"></div>' +
         '<div><label>Ламп в одном</label><input data-f="lamps" type="number" min="1" step="1" value="' + g.lamps + '"></div>' +
-        '<div><label>Единицы</label><select data-f="mode"><option value="w"' + (g.mode === 'w' ? ' selected' : '') + '>Вт (LED)</option><option value="lm"' + (g.mode === 'lm' ? ' selected' : '') + '>лм</option></select></div></div>' +
-        '<div class="row three"><div><label>' + (g.mode === 'w' ? 'Вт на лампу' : 'лм на лампу') + '</label><input data-f="' + (g.mode === 'w' ? 'watts' : 'lm') + '" type="number" min="0" step="' + (g.mode === 'w' ? 0.5 : 10) + '" value="' + (g.mode === 'w' ? g.watts : g.lm) + '"></div>' +
-        (wall ? '<div><label>Высота, м</label><input data-f="mountH" type="number" min="0.5" step="0.05" value="' + g.mountH + '"></div>'
+        '<div><label>Единицы</label><select data-f="mode"><option value="w"' + (g.mode === 'w' ? ' selected' : '') + '>Вт</option><option value="lm"' + (g.mode === 'lm' ? ' selected' : '') + '>лм</option></select></div></div>' +
+        '<div class="row"><div><label>' + (g.mode === 'w' ? 'Вт на лампу' : 'лм на лампу') + '</label><input data-f="' + (g.mode === 'w' ? 'watts' : 'lm') + '" type="number" min="0" step="' + (g.mode === 'w' ? 0.5 : 10) + '" value="' + (g.mode === 'w' ? g.watts : g.lm) + '"></div>' +
+        '<div><label>Источник света</label><select data-f="eff">' + LAMPS.map(function (l, k) { return '<option value="' + k + '"' + (k === (g.eff || 0) ? ' selected' : '') + '>' + l[0] + '</option>'; }).join('') + '</select></div></div>' +
+        '<div class="row">' + (wall ? '<div><label>Высота, м</label><input data-f="mountH" type="number" min="0.5" step="0.05" value="' + g.mountH + '"></div>'
               : '<div><label>Свес, м</label><input data-f="drop" type="number" min="0" step="0.05" value="' + g.drop + '"></div>') +
         (g.type === 'spot' ? '<div><label>Угол луча, °</label><input data-f="beam" type="number" min="8" max="150" step="1" value="' + g.beam + '"></div>' : '<div></div>') + '</div>' +
+        (g.type === 'pendant' || g.type === 'wall' ? '<div class="hint">В карточке часто указана <b>максимальная</b> мощность патрона («5×40 Вт E14») — это не мощность лампы. LED-лампа E14 обычно 5–7 Вт, E27 — 8–12 Вт.</div>' : '') +
         '<div class="hint" data-info></div></div>';
     }).join('') || '<div class="hint">Добавьте светильник.</div>';
     updateGroupInfo();
@@ -185,7 +193,16 @@
     var poly = makePoly();
     res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
     if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
-    var W = st.groups.reduce(function (s, g) { return s + g.pos.length * lumWatts(g); }, 0);
+    // Предупреждения о том, что не попало в расчёт
+    var warn = [], W = 0;
+    if (st.H <= st.wp + 0.1) warn.push('Высота потолка меньше рабочей поверхности — проверьте размеры.');
+    st.groups.forEach(function (g) {
+      var inRoom = g.pos.filter(function (p) { return M.inside(p[0], p[1], poly); }).length, out = g.pos.length - inRoom;
+      if (out) warn.push(out + ' ' + plural(out, 'светильник', 'светильника', 'светильников') + ' группы ' + letterOf(g) + ' за пределами комнаты (красные) — не учтены.');
+      if (lumZ(g) <= st.wp + 0.05) { warn.push('Группа ' + letterOf(g) + ' висит ниже рабочей поверхности (уменьшите свес) — не учтена.'); return; }
+      if (M.TYPES[g.type].mount === 'wall' && g.mountH > st.H - 0.05) warn.push('Бра группы ' + letterOf(g) + ' выше потолка — посчитаны под потолком.');
+      W += inRoom * lumWatts(g);
+    });
     var kwh = W / 1000 * st.hours * 365, cost = kwh * st.tariff;
     res.W = W; res.kwh = kwh; res.cost = cost;
     $('mlp-sum').innerHTML =
@@ -199,6 +216,7 @@
     else if (res.u0 < 0.4) { cls = 'warn'; txt = 'Света в среднем хватает, но есть тёмные зоны (равномерность ' + fmt(res.u0, 2) + '). Добавьте светильник туда, где карта синяя, или раздвиньте их.'; }
     else if (res.avg > st.E * 1.8) { cls = 'warn'; txt = 'Света с большим запасом — можно взять модели слабее или поставить диммер.'; }
     else { cls = 'good'; txt = 'Норма выполнена: света достаточно и он распределён ровно.'; }
+    if (warn.length) { txt = warn.join(' ') + ' ' + txt; if (cls === 'good') cls = 'warn'; }
     v.className = 'verdict ' + cls; v.textContent = txt;
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
@@ -301,9 +319,16 @@
   }
   function toCustom() { if (st.shape !== 'custom') { st.poly = makePoly().map(function (p) { return p.slice(); }); st.shape = 'custom'; renderDims(); } }
   var raf = 0; function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; update(true); }); }
+  var lastTap = { t: 0, i: -1 };
   cv.addEventListener('pointerdown', function (e) {
     if (!view) return; var pt = toM(e), h = hit(pt); if (!h) return;
     e.preventDefault(); cv.setPointerCapture(e.pointerId);
+    // двойное касание угла на телефоне = удалить угол (dblclick на тачскрине ненадёжен)
+    if (h.kind === 'vtx' && e.pointerType !== 'mouse') {
+      var now = Date.now();
+      if (lastTap.i === h.i && now - lastTap.t < 400) { lastTap.t = 0; removeVertex(h.i); return; }
+      lastTap = { t: now, i: h.i };
+    }
     if (h.kind === 'mid') { toCustom(); st.poly.splice(h.i + 1, 0, [snap(pt[0]), snap(pt[1])]); h = { kind: 'vtx', i: h.i + 1 }; }
     else if (h.kind === 'vtx') toCustom();
     drag = h; cv.style.cursor = 'grabbing';
@@ -311,16 +336,28 @@
   cv.addEventListener('pointermove', function (e) {
     if (!view) return; var pt = toM(e);
     if (!drag) { cv.style.cursor = hit(pt) ? 'grab' : 'default'; return; }
-    var x = snap(pt[0]), y = snap(pt[1]);
-    if (drag.kind === 'lum') { if (M.inside(x, y, makePoly())) drag.g.pos[drag.i] = [x, y]; }
-    else st.poly[drag.i] = [x, y];
+    var x = snap(pt[0]), y = snap(pt[1]), poly = makePoly();
+    if (drag.kind === 'lum') {
+      if (M.TYPES[drag.g.type].mount === 'wall') drag.g.pos[drag.i] = M.snapToWall(poly, pt[0], pt[1], 0.08); // бра — только на стене
+      else if (M.inside(x, y, poly)) drag.g.pos[drag.i] = [x, y];
+    } else {
+      var prev = st.poly[drag.i]; st.poly[drag.i] = [x, y];
+      if (!M.isSimple(st.poly)) st.poly[drag.i] = prev; // не даём «перекрутить» комнату
+      else snapWallLums();
+    }
     later();
   });
+  // после изменения стен бра остаются на стенах
+  function snapWallLums() {
+    var poly = makePoly();
+    st.groups.forEach(function (g) { if (M.TYPES[g.type].mount === 'wall') g.pos = g.pos.map(function (p) { return M.snapToWall(poly, p[0], p[1], 0.08); }); });
+  }
+  function removeVertex(i) { toCustom(); if (st.poly.length > 3) { var prev = st.poly.slice(); st.poly.splice(i, 1); if (!M.isSimple(st.poly)) st.poly = prev; snapWallLums(); update(); } }
   function endDrag() { if (drag) { drag = null; cv.style.cursor = 'default'; update(); } }
   cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
   cv.addEventListener('dblclick', function (e) {
     var h = hit(toM(e)); if (!h || h.kind !== 'vtx') return;
-    toCustom(); if (st.poly.length > 3) { st.poly.splice(h.i, 1); update(); }
+    removeVertex(h.i);
   });
 
   // ---------- Ввод ----------
@@ -342,7 +379,7 @@
     }
     if (f) {
       var g = st.groups.filter(function (x) { return x.id === +t.closest('.grp').dataset.g; })[0]; if (!g) return;
-      if (f === 'type') { g.type = t.value; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); relayout(g); renderGroups(); update(); return; }
+      if (f === 'type') { g.type = t.value; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); g.eff = DEF_LAMP[g.type]; relayout(g); renderGroups(); update(); return; }
       if (f === 'mode') { g.mode = t.value; renderGroups(); update(); return; }
       g[f] = num(t.value);
       if (f === 'count') { g.count = Math.max(0, Math.min(60, Math.round(g.count))); relayout(g); }

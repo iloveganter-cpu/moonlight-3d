@@ -115,6 +115,9 @@
     patches.forEach(function (p) {
       p.rho = p.ceil ? r[0] : r[1];
       var e = 0;
+      // низ стен (ниже рабочей плоскости) прямой свет не считаем: этот поток уже прошёл через
+      // рабочую плоскость и учтён в Fwp (с отражением пола) — иначе двойной счёт
+      if (p.z < room.wp) { p.E = 0; p.M = 0; return; }
       for (var q = 0; q < active.length; q++) {
         var l = active[q], dx = p.x - l.x, dy = p.y - l.y, dz = p.z - l.z, d2 = dx * dx + dy * dy + dz * dz, d = Math.sqrt(d2);
         if (d < 1e-4) continue; // светильник вплотную к центру участка (накладной на потолке)
@@ -124,6 +127,12 @@
       }
       p.E = e; p.M = p.rho * e / Math.PI; // яркость (кд/м²)
     });
+    // Комната закрыта: весь поток, не попавший на рабочую плоскость, обязан лечь на стены/потолок.
+    // Дискретизация (участок у самого светильника) даёт ±15 % — нормируем сумму, распределение оставляем.
+    var Ftot = active.reduce(function (s, l) { return s + l.flux; }, 0);
+    var Fwp = Math.min(Ftot, cnt ? sumD / cnt * S : 0);
+    var Fp = patches.reduce(function (s, p) { return s + p.E * p.A; }, 0);
+    if (Fp > 0) { var kf = (Ftot - Fwp) / Fp; patches.forEach(function (p) { p.E *= kf; p.M *= kf; }); }
     var lit = patches.filter(function (p) { return p.M > 1e-6; });
     for (var t = 0; t < pts.length; t++) {
       var k2 = pts[t], x2 = bb.x0 + (k2 % nx + 0.5) * sx, y2 = bb.y0 + (Math.floor(k2 / nx) + 0.5) * sy, add = 0;
@@ -141,9 +150,7 @@
     // 3) последующие отражения — равномерно: Φ₁·ρ / (A·(1−ρ)), Φ₁ — весь поток после первого отражения
     var P = perimeter(poly), Aw = P * room.H, A = 2 * S + Aw;
     var rho = (S * r[0] + Aw * r[1] + S * r[2]) / A;
-    var Ftot = active.reduce(function (s, l) { return s + l.flux; }, 0);
-    var Fwp = Math.min(Ftot, cnt ? sumD / cnt * S : 0);
-    var F1 = Fwp * r[2] + patches.reduce(function (s, p) { return s + p.rho * p.E * p.A; }, 0);
+    var F1 =Fwp * r[2] + patches.reduce(function (s, p) { return s + p.rho * p.E * p.A; }, 0);
     var Eind = A > 0 && rho < 1 ? F1 * rho / (A * (1 - rho)) : 0;
     for (var m = 0; m < E.length; m++) if (mask[m]) E[m] = (E[m] + Eind) / room.kz;
 
@@ -167,6 +174,32 @@
     };
   }
 
+  // Контур без самопересечений (иначе площадь и «внутри/снаружи» неверны)
+  function isSimple(poly) {
+    var n = poly.length; if (n < 3) return false;
+    for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue; // соседние стены
+      var a = poly[i], b = poly[(i + 1) % n], c = poly[j], d = poly[(j + 1) % n];
+      var d1 = cross(a[0], a[1], b[0], b[1], c[0], c[1]), d2 = cross(a[0], a[1], b[0], b[1], d[0], d[1]);
+      var d3 = cross(c[0], c[1], d[0], d[1], a[0], a[1]), d4 = cross(c[0], c[1], d[0], d[1], b[0], b[1]);
+      if (((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0)) && d1 && d2 && d3 && d4) return false;
+    }
+    return area(poly) > 0.5;
+  }
+  // Ближайшая точка на стене, сдвинутая внутрь на off — для бра
+  function snapToWall(poly, x, y, off) {
+    var best = null, bd = Infinity;
+    for (var i = 0, n = poly.length; i < n; i++) {
+      var a = poly[i], b = poly[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (!L2) continue;
+      var t = clamp(((x - a[0]) * dx + (y - a[1]) * dy) / L2, 0.02, 0.98), px = a[0] + t * dx, py = a[1] + t * dy, d = Math.hypot(x - px, y - py);
+      if (d < bd) {
+        var L = Math.sqrt(L2), nx = -dy / L, ny = dx / L;
+        if (!inside(px + nx * 0.01, py + ny * 0.01, poly)) { nx = -nx; ny = -ny; }
+        bd = d; best = [px + nx * off, py + ny * off];
+      }
+    }
+    return best;
+  }
   function isConvex(poly) {
     var sgn = 0;
     for (var i = 0, n = poly.length; i < n; i++) {
@@ -297,7 +330,7 @@
 
   var api = {
     rect: rect, lshape: lshape, ushape: ushape, area: area, perimeter: perimeter, bbox: bbox, inside: inside,
-    distToEdges: distToEdges, blocked: blocked, TYPES: TYPES, intensity: intensity, compute: compute,
+    distToEdges: distToEdges, blocked: blocked, isSimple: isSimple, snapToWall: snapToWall, TYPES: TYPES, intensity: intensity, compute: compute,
     isolines: isolines, layout: layout, gridDims: gridDims, uOf: uOf, clamp: clamp
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

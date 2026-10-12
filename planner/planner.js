@@ -166,8 +166,18 @@
   function lumZ(g) { return M.TYPES[g.type].mount === 'wall' ? Math.min(g.mountH, st.H - 0.05) : st.H - g.drop; }
   function colorOf(g) { return COLORS[(st.groups.indexOf(g)) % COLORS.length]; }
   function letterOf(g) { return String.fromCharCode(65 + st.groups.indexOf(g)); }
-  function relayout(g) { g.pos = M.layout(makePoly(), Math.max(0, Math.round(g.count)), M.TYPES[g.type].mount); }
-  function relayoutAll() { st.groups.forEach(relayout); update(); }
+  // Люстры и плафоны — основной свет, встают по центру сами по себе; споты обходят уже стоящие потолочные светильники
+  function isMain(g) { return g.type === 'pendant' || g.type === 'ceiling'; }
+  function relayout(g) {
+    var fixed = [];
+    if (!isMain(g)) st.groups.forEach(function (o) { if (o !== g && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
+    g.pos = M.layout(makePoly(), Math.max(0, Math.round(g.count)), M.TYPES[g.type].mount, { fixed: fixed });
+  }
+  function relayoutAll() {
+    st.groups.forEach(function (g) { g.pos = []; });
+    st.groups.filter(isMain).concat(st.groups.filter(function (g) { return !isMain(g); })).forEach(relayout);
+    update();
+  }
 
   function renderGroups() {
     $('mlp-groups').innerHTML = st.groups.map(function (g, i) {

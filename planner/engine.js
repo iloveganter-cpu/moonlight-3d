@@ -303,9 +303,76 @@
     for (var c = 1; c <= n; c++) { var r = Math.ceil(n / c), sc = Math.abs(a / c - b / r) + (r * c - n) * Math.min(a, b) * 0.6; if (!best || sc < best[2]) best = [c, r, sc]; }
     return [best[0], best[1]];
   }
-  function layout(poly, n, mount, wallOffset) {
+  // fixed — уже стоящие потолочные светильники других групп: новые встанут в «свободные» зоны
+  function layout(poly, n, mount, opt) {
     if (n <= 0) return [];
-    return mount === 'wall' ? layoutWall(poly, n, wallOffset || 0.08) : layoutCeiling(poly, n);
+    opt = opt || {};
+    if (mount === 'wall') return layoutWall(poly, n, opt.wallOffset || 0.08);
+    var fixed = (opt.fixed || []).filter(function (p) { return inside(p[0], p[1], poly); });
+    if (isAxisRect(poly)) { var gr = rectGridAvoiding(poly, n, fixed); if (gr) return gr; }
+    return layoutCVT(poly, n, fixed);
+  }
+  // Прямоугольник: ровная симметричная сетка (так ставят дизайнеры); из вариантов рядов×колонок берём
+  // самый пропорциональный, где ни одна точка не ближе 0,6 м к уже стоящему светильнику (люстре)
+  function rectGridAvoiding(poly, n, fixed) {
+    var bb = bbox(poly), cand = [];
+    for (var c = 1; c <= n; c++) { var r = Math.ceil(n / c); if ((r - 1) * c >= n) continue; cand.push([c, r, Math.abs(bb.w / c - bb.h / r) + (r * c - n) * Math.min(bb.w, bb.h) * 0.6]); }
+    cand.sort(function (p, q) { return p[2] - q[2]; });
+    for (var t = 0; t < cand.length; t++) {
+      var pts = [], cc = cand[t][0], rr = cand[t][1];
+      for (var j = 0, k = 0; j < rr; j++) { var inRow = Math.min(cc, n - k); for (var i = 0; i < inRow; i++, k++) pts.push([bb.x0 + bb.w * (i + 0.5) / inRow, bb.y0 + bb.h * (j + 0.5) / rr]); }
+      var clash = pts.some(function (p) { return fixed.some(function (f) { return Math.hypot(p[0] - f[0], p[1] - f[1]) < 0.6; }); });
+      if (!clash) return pts;
+    }
+    return null;
+  }
+  function isAxisRect(poly) {
+    if (poly.length !== 4) return false;
+    for (var i = 0; i < 4; i++) { var a = poly[i], b = poly[(i + 1) % 4]; if (Math.abs(a[0] - b[0]) > 1e-6 && Math.abs(a[1] - b[1]) > 1e-6) return false; }
+    return true;
+  }
+  // Равномерное покрытие любой формы: центроидальное разбиение Вороного (алгоритм Ллойда).
+  // Каждому светильнику достаётся примерно равная «своя» площадь, поэтому заполняются и узкие рукава Г/П.
+  function layoutCVT(poly, n, fixed) {
+    var S = area(poly), bb = bbox(poly), step = clamp(Math.sqrt(S / ((n + fixed.length) * 80)), 0.03, 0.12), smp = [];
+    for (var y = bb.y0 + step / 2; y < bb.y1; y += step) for (var x = bb.x0 + step / 2; x < bb.x1; x += step) if (inside(x, y, poly)) smp.push([x, y]);
+    if (!smp.length) return [];
+    // старт: самая «глубокая» точка, затем каждый раз — самая далёкая от уже выбранных (детерминированно)
+    var seeds = fixed.slice(), pts = [], dmin = smp.map(function () { return Infinity; });
+    function addSeed(p) { smp.forEach(function (s, k) { dmin[k] = Math.min(dmin[k], Math.hypot(s[0] - p[0], s[1] - p[1])); }); }
+    seeds.forEach(addSeed);
+    for (var k = 0; k < n; k++) {
+      var bi = 0, bv = -1;
+      for (var q = 0; q < smp.length; q++) {
+        var v = seeds.length || pts.length ? dmin[q] : distToEdges(smp[q][0], smp[q][1], poly);
+        if (v > bv) { bv = v; bi = q; }
+      }
+      pts.push(smp[bi].slice()); addSeed(smp[bi]);
+    }
+    for (var it = 0; it < 40; it++) {
+      var sx = new Float64Array(n), sy = new Float64Array(n), cnt = new Float64Array(n), all = fixed.concat(pts);
+      for (var s = 0; s < smp.length; s++) {
+        var best = 0, bd = Infinity;
+        for (var j = 0; j < all.length; j++) { var dx = smp[s][0] - all[j][0], dy = smp[s][1] - all[j][1], d2 = dx * dx + dy * dy; if (d2 < bd) { bd = d2; best = j; } }
+        best -= fixed.length; if (best < 0) continue; // точка «принадлежит» неподвижному светильнику
+        sx[best] += smp[s][0]; sy[best] += smp[s][1]; cnt[best]++;
+      }
+      var moved = 0;
+      for (var m = 0; m < n; m++) {
+        if (!cnt[m]) continue;
+        var c = [sx[m] / cnt[m], sy[m] / cnt[m]];
+        if (!inside(c[0], c[1], poly)) c = nearestSample(smp, c); // центр «своей» зоны в вогнутом углу — ближайшая точка комнаты
+        moved = Math.max(moved, Math.hypot(c[0] - pts[m][0], c[1] - pts[m][1])); pts[m] = c;
+      }
+      if (moved < 0.005) break;
+    }
+    return pts.map(function (p) { return [Math.round(p[0] * 20) / 20, Math.round(p[1] * 20) / 20]; }) // шаг 5 см, как при ручной расстановке
+      .map(function (p, i) { return inside(p[0], p[1], poly) ? p : pts[i]; });
+  }
+  function nearestSample(smp, c) {
+    var b = smp[0], bd = Infinity;
+    smp.forEach(function (s) { var d = (s[0] - c[0]) * (s[0] - c[0]) + (s[1] - c[1]) * (s[1] - c[1]); if (d < bd) { bd = d; b = s; } });
+    return b.slice();
   }
   function layoutCeiling(poly, n) {
     var bb = bbox(poly), pts;

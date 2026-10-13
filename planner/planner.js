@@ -542,7 +542,8 @@
           var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 2400 / Math.max(v1.width, v1.height) });
           var c = document.createElement('canvas'), x = c.getContext('2d');
           c.width = Math.round(vp.width); c.height = Math.round(vp.height); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
-          return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { return c; });
+          // intent 'print' — без requestAnimationFrame, иначе в фоновой вкладке рендер стоит
+          return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { return c; });
         });
     }
     return new Promise(function (ok, no) {

@@ -22,6 +22,8 @@
     groups: [], gid: 0
   };
   var res = null;
+  // Квартира — список комнат, st — выбранная (весь код ниже работает с st); all — вид «Вся квартира»
+  var rooms = [st], all = false;
 
   // ---------- Стили ----------
   var css = '' +
@@ -81,6 +83,12 @@
     '.mlp .pg{display:flex;flex-direction:column;gap:4px;align-items:center;border:1px solid #ccc;border-radius:6px;background:#fafafa;padding:6px;cursor:pointer;font:inherit;font-size:12px;color:var(--ink)}' +
     '.mlp .pg:hover{border-color:#000}.mlp .pg.best{border:2px solid #2e7d32;background:#e8f5e9}.mlp .pg canvas{width:100%;height:auto;border-radius:3px;cursor:pointer}' +
     '.mlp .pg .ph{display:block;width:100%;aspect-ratio:1.41;background:#eee;border-radius:3px}' +
+    '.mlp .rtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}' +
+    '.mlp .rtabs button{height:34px;padding:0 12px;border:1px solid #ccc;border-radius:17px;background:#fff;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;color:#000}' +
+    '.mlp .rtabs button.on{background:#000;color:#fff;border-color:#000}.mlp .rtabs button.add{border-style:dashed}.mlp .rtabs .rx{margin-left:2px;opacity:.7;font-size:16px;line-height:1}' +
+    '.mlp .mk{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.mlp .mk.good{background:#2e7d32}.mlp .mk.warn{background:#ef6c00}.mlp .mk.bad{background:#c62828}' +
+    '.mlp .apt{width:100%;border-collapse:collapse;font-size:13px}.mlp .apt td,.mlp .apt th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.mlp .apt td:first-child,.mlp .apt th:first-child{text-align:left}' +
+    '.mlp .apt th{font-weight:400;color:var(--mute);font-size:12px}.mlp .apt tr[data-ri]{cursor:pointer}.mlp .apt tr[data-ri]:hover{background:var(--soft)}.mlp .apt tfoot td{font-weight:600;border-bottom:0}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
     '@media (max-width:480px){.mlp h2{font-size:23px}.mlp .row.m1{grid-template-columns:minmax(0,1fr)}.mlp .seg button{font-size:11px}.mlp .sum b{font-size:20px}}';
@@ -92,7 +100,9 @@
     '<p class="sub">Нарисуйте комнату, расставьте светильники — карта покажет, где светло, а где темно.</p>' +
     '<div class="symrec" id="mlp-symrec" hidden></div>' +
     '<div class="wrap"><div class="side">' +
-      '<div class="card"><h3>Помещение</h3>' +
+      '<div class="card" id="mlp-c-apt" hidden><h3>Квартира</h3><div id="mlp-apt"></div>' +
+        '<div class="hint">Нажмите на комнату на плане или в списке — откроются её светильники.</div></div>' +
+      '<div class="card" id="mlp-c-room"><h3>Помещение</h3>' +
         '<div class="seg" id="mlp-shape">' + SHAPES.map(function (s) { return '<button type="button" data-shape="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
         '<div class="row" id="mlp-dims"></div>' +
         '<div class="tools" style="margin:0 0 4px"><button type="button" class="btn small ghost" id="mlp-trace">Обвести по своему плану</button>' +
@@ -105,11 +115,12 @@
           '<div><label>Отделка</label><select data-k="refl">' + opts(REFL, 1) + '</select></div></div>' +
         '<div class="row one"><div><label>Условия</label><select data-k="kz">' + opts(KZ, 1) + '</select></div></div>' +
       '</div>' +
-      '<div class="card"><h3>Светильники <button type="button" class="btn small ghost" id="mlp-add">+ Добавить</button></h3><div id="mlp-groups"></div>' +
+      '<div class="card" id="mlp-c-lum"><h3>Светильники <button type="button" class="btn small ghost" id="mlp-add">+ Добавить</button></h3><div id="mlp-groups"></div>' +
         '<div class="hint">Мощность, число ламп и световой поток — в характеристиках товара. Если указан поток в люменах, выбирайте «лм» — так точнее.</div></div>' +
-      '<div class="card"><h3>Электричество</h3><div class="row"><div><label>Часов в день</label><input data-k="hours" type="number" step="0.5" min="0" max="24"></div>' +
+      '<div class="card" id="mlp-c-el"><h3>Электричество</h3><div class="row"><div><label>Часов в день</label><input data-k="hours" type="number" step="0.5" min="0" max="24"></div>' +
         '<div><label>Тариф, сом/кВт·ч</label><input data-k="tariff" type="number" step="0.01" min="0"></div></div></div>' +
     '</div><div class="main">' +
+      '<div class="rtabs" id="mlp-rtabs"></div>' +
       '<div class="plan"><div class="views"><button type="button" data-view="plan" class="on">План</button><button type="button" data-view="3d">3D</button></div>' +
         '<div class="tbar" id="mlp-tbar" hidden><div id="mlp-tstep"></div><div class="tools">' +
           '<span class="tlen" id="mlp-tlenrow"><input id="mlp-tlen" type="number" min="0.3" step="0.01" inputmode="decimal" placeholder="Длина"> м</span>' +
@@ -379,13 +390,9 @@
     });
     return out;
   }
-  function update(fast) {
-    var poly = makePoly();
-    res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
-    if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
-    $('mlp-bgrow').hidden = !(st.bg && st.shape === 'custom');
-    symBanner();
-    // Предупреждения о том, что не попало в расчёт
+  // Расчёт текущей комнаты st: освещённость, мощность, деньги и то, что не попало в расчёт
+  function calc(fast) {
+    var poly = makePoly(), r = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
     var warn = [], W = 0;
     if (st.H <= st.wp + 0.1) warn.push('Высота потолка меньше рабочей поверхности — проверьте размеры.');
     st.groups.forEach(function (g) {
@@ -395,39 +402,242 @@
       if (M.TYPES[g.type].mount === 'wall' && g.mountH > st.H - 0.05) warn.push('Бра группы ' + letterOf(g) + ' выше потолка — посчитаны под потолком.');
       if (g.on !== false) W += inRoom * lumWatts(g);
     });
-    var offG = st.groups.filter(function (g) { return g.on === false && g.pos.length; }).map(letterOf);
-    var kwh = W / 1000 * st.hours * 365, cost = kwh * st.tariff;
-    res.W = W; res.kwh = kwh; res.cost = cost;
+    r.W = W; r.kwh = W / 1000 * st.hours * 365; r.cost = r.kwh * st.tariff; r.warn = warn;
+    r.offG = st.groups.filter(function (g) { return g.on === false && g.pos.length; }).map(letterOf);
+    return r;
+  }
+  function verdictOf(r) {
+    var cls, txt;
+    if (!r.active) { cls = 'bad'; txt = 'Добавьте светильники — сейчас в комнате нет света.'; }
+    else if (r.avg < st.E * 0.9) { cls = 'bad'; txt = 'Темновато: не хватает примерно ' + fmt((1 - r.avg / st.E) * 100) + ' % света. Добавьте светильник или выберите мощнее.'; }
+    else if (r.u0 < 0.4) { cls = 'warn'; txt = 'Света в среднем хватает, но есть тёмные зоны (равномерность ' + fmt(r.u0, 2) + '). Добавьте светильник туда, где карта синяя, или раздвиньте их.'; }
+    else if (r.avg > st.E * 1.8) { cls = 'warn'; txt = 'Света с большим запасом — можно взять модели слабее или поставить диммер.'; }
+    else { cls = 'good'; txt = 'Норма выполнена: света достаточно и он распределён ровно.'; }
+    var base = cls;
+    if (r.warn.length) { txt = r.warn.join(' ') + ' ' + txt; if (cls === 'good') cls = 'warn'; }
+    if (r.offG.length) txt = 'Выключено: ' + r.offG.join(', ') + ' — показан свет только включённых групп. ' + txt;
+    return { cls: cls, txt: txt, base: base };
+  }
+  // Расчёт любой комнаты квартиры — с кэшем, пока комната не менялась
+  function roomKey(r) { return JSON.stringify(r, function (k, v) { return k === 'bg' || k.charAt(0) === '_' ? undefined : v; }); }
+  function withRoom(r, fn) { var s = st, rs = res; st = r; try { return fn(); } finally { st = s; res = rs; } }
+  function roomRes(r) {
+    var k = roomKey(r); if (r._key === k && r._res) return r._res;
+    return withRoom(r, function () { var x = calc(false); r._key = k; r._res = x; return x; });
+  }
+  function update(fast) {
+    if (all && !tr) { aptView(); return; }
+    res = calc(fast);
+    if (!fast) { st._key = roomKey(st); st._res = res; }
+    if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
+    $('mlp-bgrow').hidden = !(st.bg && st.shape === 'custom');
+    symBanner();
     $('mlp-sum').innerHTML =
       '<div><b>' + fmt(res.avg) + ' лк</b><span>средняя (норма ' + fmt(st.E) + ')</span></div>' +
       '<div><b>' + fmt(res.min) + ' лк</b><span>минимум · равномерность ' + fmt(res.u0, 2) + '</span></div>' +
-      '<div><b>' + fmt(W) + ' Вт</b><span>' + fmt(res.area ? W / res.area : 0, 1) + ' Вт/м² · ' + fmt(res.area, 1) + ' м²</span></div>' +
-      '<div><b>' + fmt(cost) + ' сом</b><span>в год · ' + fmt(kwh) + ' кВт·ч</span></div>';
-    var v = $('mlp-verdict'), cls, txt;
-    if (!res.active) { cls = 'bad'; txt = 'Добавьте светильники — сейчас в комнате нет света.'; }
-    else if (res.avg < st.E * 0.9) { cls = 'bad'; txt = 'Темновато: не хватает примерно ' + fmt((1 - res.avg / st.E) * 100) + ' % света. Добавьте светильник или выберите мощнее.'; }
-    else if (res.u0 < 0.4) { cls = 'warn'; txt = 'Света в среднем хватает, но есть тёмные зоны (равномерность ' + fmt(res.u0, 2) + '). Добавьте светильник туда, где карта синяя, или раздвиньте их.'; }
-    else if (res.avg > st.E * 1.8) { cls = 'warn'; txt = 'Света с большим запасом — можно взять модели слабее или поставить диммер.'; }
-    else { cls = 'good'; txt = 'Норма выполнена: света достаточно и он распределён ровно.'; }
-    if (warn.length) { txt = warn.join(' ') + ' ' + txt; if (cls === 'good') cls = 'warn'; }
-    if (offG.length) txt = 'Выключено: ' + offG.join(', ') + ' — показан свет только включённых групп. ' + txt;
-    v.className = 'verdict ' + cls; v.textContent = txt;
+      '<div><b>' + fmt(res.W) + ' Вт</b><span>' + fmt(res.area ? res.W / res.area : 0, 1) + ' Вт/м² · ' + fmt(res.area, 1) + ' м²</span></div>' +
+      '<div><b>' + fmt(res.cost) + ' сом</b><span>в год · ' + fmt(res.kwh) + ' кВт·ч</span></div>';
+    var vd = verdictOf(res), v = $('mlp-verdict');
+    v.className = 'verdict ' + vd.cls; v.textContent = vd.txt;
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
     if (view3d && !fast) refresh3d();
-    if (!fast) { clearTimeout(recT); recT = setTimeout(recommend, 350); clearTimeout(hT); hT = setTimeout(histRec, 300); }
+    if (!fast) { renderTabs(); clearTimeout(recT); recT = setTimeout(recommend, 350); clearTimeout(hT); hT = setTimeout(histRec, 300); }
+  }
+
+  // ---------- Квартира: вкладки комнат, общий план, сводка ----------
+  function roomName(r) {
+    var base = ROOMS[r.room][1] || r.room !== ROOMS.length - 1 ? ROOMS[r.room][0] : 'Помещение';
+    var same = rooms.filter(function (o) { return o.room === r.room; });
+    return same.length > 1 ? base + ' ' + (same.indexOf(r) + 1) : base;
+  }
+  function markOf(r) { var x = roomRes(r); return withRoom(r, function () { return verdictOf(x).cls; }); }
+  function renderTabs() {
+    var box = $('mlp-rtabs'), h = '';
+    if (rooms.length > 1) h += '<button type="button" data-rt="all"' + (all ? ' class="on"' : '') + '>Вся квартира</button>';
+    rooms.forEach(function (r, i) {
+      var on = !all && r === st;
+      h += '<button type="button" data-rt="' + i + '"' + (on ? ' class="on"' : '') + '><span class="mk ' + markOf(r) + '"></span>' + esc(roomName(r)) +
+        (on && rooms.length > 1 ? '<span class="rx" data-rdel title="Удалить комнату">×</span>' : '') + '</button>';
+    });
+    h += '<button type="button" class="add" data-rt="add">+ Комната</button>';
+    box.innerHTML = h;
+  }
+  // Новая комната: общие параметры квартиры — как у текущей, тип — первый ещё не занятый
+  function newRoom() {
+    var used = rooms.map(function (r) { return r.room; }), t = 0;
+    while (t < 7 && used.indexOf(t) >= 0) t++;
+    return { shape: 'rect', a: 4, b: 3, ca: 2, cb: 1.5, poly: null, H: st.H, wp: st.wp, room: t, E: ROOMS[t][1] || st.E,
+      refl: st.refl, kz: st.kz, hours: st.hours, tariff: st.tariff, iso: st.iso, groups: [], gid: 0 };
+  }
+  // Стартовый свет новой комнаты: люстра по центру (в санузле, коридоре, гардеробной — без неё) и наименьшая
+  // симметричная схема спотов, при которой выполнена норма; хватает одной люстры — спотов нет
+  function starterLights() {
+    st.groups = []; st.gid = 0;
+    if ((ROOMS[st.room][1] || st.E) > 75) addGroup('pendant');
+    addGroup('spot');
+    var g = st.groups[st.groups.length - 1], poly = makePoly(), room = { poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] };
+    // светло везде (даже минимум ≥ 60 % нормы) — равномерность не важна, иначе в маленькой комнате споты множатся
+    function ok(r) { return r.avg >= st.E && (r.u0 >= 0.4 || r.min >= 0.6 * st.E); }
+    var sym = ((M.symOptions(poly, mainFixed()) || []).filter(function (o) { return o.neat; })).slice(0, 14);
+    if (!sym.length) for (var n = 1; n <= 20; n++) sym.push({ n: n, pts: M.layout(poly, n, 'ceiling', { fixed: mainFixed(), exact: true }) }); // стены не под прямым углом
+    var cands = [{ n: 0, pts: [] }].concat(sym);
+    if (st.groups.length === 1) cands.shift(); // без люстры хотя бы один спот
+    var pick = null;
+    for (var i = 0; i < cands.length && !pick; i++) {
+      g.count = cands[i].n; g.pos = cands[i].pts;
+      if (ok(M.compute(room, lumsAll(), { fast: true })) && ok(M.compute(room, lumsAll()))) pick = cands[i];
+    }
+    if (!pick && cands.length) pick = cands[cands.length - 1];
+    if (pick && !pick.n && st.groups.length > 1) st.groups.pop();
+    else { g.count = pick ? pick.n : 4; relayoutSpots(); }
+  }
+  function syncSide() {
+    root.querySelectorAll('.side [data-k]').forEach(function (el) { el.value = st[el.dataset.k]; });
+    $('mlp-iso').checked = st.iso; $('mlp-bgshow').checked = !st.bg || st.bg.show !== false;
+  }
+  function sideMode() {
+    $('mlp-c-apt').hidden = !all; $('mlp-c-room').hidden = $('mlp-c-lum').hidden = $('mlp-c-el').hidden = all;
+    root.querySelector('.views').hidden = all || !!tr; $('mlp-tools2d').hidden = all || !!tr || view3d; $('mlp-hint2d').hidden = all || !!tr || view3d;
+    if (all) { $('mlp-rec').hidden = true; $('mlp-symrec').hidden = true; }
+  }
+  function openRoom(r) {
+    if (tr) return;
+    clearTimeout(recT); st = r; all = false;
+    syncSide(); sideMode(); renderDims(); renderGroups(); update();
+  }
+  function openAll() {
+    if (tr || rooms.length < 2) return;
+    if (view3d) setView('plan');
+    clearTimeout(recT); all = true; sideMode(); update();
+  }
+  function addRoom() {
+    if (tr) return;
+    var img = planImg();
+    if (img) { startTrace(img, { add: true }); return; }
+    var r = newRoom(); rooms.push(r); st = r; all = false;
+    r.poly = makePoly(); starterLights();
+    syncSide(); sideMode(); renderDims(); renderGroups(); update();
+  }
+  function delRoom() {
+    if (rooms.length < 2) return;
+    var i = rooms.indexOf(st); rooms.splice(i, 1);
+    openRoom(rooms[Math.max(0, i - 1)]);
+  }
+  // Основной план квартиры — картинка, по которой обведено больше всего комнат
+  function planImg() {
+    var best = null, bn = 0;
+    rooms.forEach(function (r) { if (!r.bg) return; var n = rooms.filter(function (o) { return o.bg && o.bg.img === r.bg.img; }).length; if (n > bn) { bn = n; best = r.bg.img; } });
+    return best;
+  }
+  // Метры комнаты → пиксели картинки плана (обратное к finishTrace): p0 + поворот(ax) · (м + sh) / mpp
+  function bgMatrix(r) { var B = r.bg; return new DOMMatrix().translate(B.p0[0], B.p0[1]).rotate(B.ax * 180 / Math.PI).scale(1 / B.mpp).translate(B.sh[0], B.sh[1]); }
+  function polyOf(r) { return withRoom(r, makePoly); }
+  // Где каждая комната на общем плане: обведённые по основной картинке — на своих местах, остальные — рядом в ряд
+  function placeRooms() {
+    var img = planImg(), out = [], x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, mpp0 = 0.01;
+    function ext(m, poly) { poly.forEach(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }); }
+    rooms.forEach(function (r) { if (img && r.bg && r.bg.img === img) { var m = bgMatrix(r), poly = polyOf(r); mpp0 = r.bg.mpp; ext(m, poly); out.push({ r: r, m: m, poly: poly }); } });
+    var placed = out.length, cx = placed ? x0 : 0, cy = placed ? y1 + 0.6 / mpp0 : 0, rowH = 0;
+    rooms.forEach(function (r) {
+      if (img && r.bg && r.bg.img === img) return;
+      var poly = polyOf(r), bb = M.bbox(poly), m = new DOMMatrix().translate(cx, cy).scale(1 / mpp0).translate(-bb.x0, -bb.y0);
+      ext(m, poly); out.push({ r: r, m: m, poly: poly }); cx += (bb.w + 0.6) / mpp0; rowH = Math.max(rowH, bb.h);
+    });
+    out.sort(function (a, b) { return rooms.indexOf(a.r) - rooms.indexOf(b.r); });
+    return { list: out, img: img, bb: { x0: x0, y0: y0, x1: x1, y1: y1 } };
+  }
+  var allHit = [], allHov = null;
+  function drawAll(clean) {
+    var P = placeRooms(), bb = P.bb, dpr = window.devicePixelRatio || 1, cw = cv.clientWidth || 600, pad = 24;
+    var w = Math.max(1, bb.x1 - bb.x0), h = Math.max(1, bb.y1 - bb.y0), maxH = Math.min(680, (window.innerHeight || 800) * 0.75);
+    var sc = Math.min((cw - 2 * pad) / w, (maxH - 2 * pad) / h), ch = Math.round(h * sc + 2 * pad);
+    cv.style.height = ch + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    var W = new DOMMatrix().scale(dpr).translate((cw - w * sc) / 2, pad).scale(sc).translate(-bb.x0, -bb.y0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    if (P.img) { ctx.setTransform(W); ctx.globalAlpha = 0.45; ctx.drawImage(P.img, 0, 0); ctx.globalAlpha = 1; }
+    allHit = [];
+    P.list.forEach(function (it) {
+      var r = it.r, x = roomRes(r), g = x.grid, F = W.multiply(it.m), poly = it.poly;
+      allHit.push({ r: r, inv: F.inverse(), poly: poly });
+      // карта — в долях нормы комнаты: середина шкалы = норма
+      var off = document.createElement('canvas'); off.width = g.nx; off.height = g.ny;
+      var oc = off.getContext('2d'), im = oc.createImageData(g.nx, g.ny), m = Math.max(r.E * 2, 50);
+      for (var k = 0; k < g.E.length; k++) { var c = colorAt(g.E[k] / m), o = k * 4; im.data[o] = c[0]; im.data[o + 1] = c[1]; im.data[o + 2] = c[2]; im.data[o + 3] = g.mask[k] ? 255 : 0; }
+      oc.putImageData(im, 0, 0);
+      ctx.save(); ctx.setTransform(F);
+      ctx.beginPath(); poly.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }); ctx.closePath(); ctx.clip();
+      ctx.fillStyle = '#222'; ctx.fill(); ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(off, g.x0, g.y0, g.nx * g.sx, g.ny * g.sy); ctx.restore();
+      // стены, светильники, подпись — в экранных координатах
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      var S = function (p) { var q = F.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; };
+      ctx.beginPath(); poly.forEach(function (p, i) { var q = S(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath();
+      ctx.strokeStyle = allHov === r ? '#1565c0' : '#000'; ctx.lineWidth = (allHov === r ? 4 : 2.5) * dpr; ctx.stroke();
+      withRoom(r, function () {
+        st.groups.forEach(function (gr) {
+          if (gr.on === false) return; var col = colorOf(gr);
+          gr.pos.forEach(function (p) { if (!M.inside(p[0], p[1], poly)) return; var q = S(p); ctx.beginPath(); ctx.arc(q[0], q[1], 4 * dpr, 0, 7); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2 * dpr; ctx.stroke(); });
+        });
+      });
+      var zs = M.zones(poly) || [], z = zs.slice().sort(function (a, b) { return (b.x1 - b.x0) * (b.y1 - b.y0) - (a.x1 - a.x0) * (a.y1 - a.y0); })[0], pb = M.bbox(poly);
+      var c0 = S(z ? [(z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2] : [(pb.x0 + pb.x1) / 2, (pb.y0 + pb.y1) / 2]), mk = markOf(r);
+      var t1 = roomName(r), t2 = fmt(x.avg) + ' / ' + fmt(r.E) + ' лк';
+      ctx.font = '600 ' + 12 * dpr + 'px Arial'; var tw = Math.max(ctx.measureText(t1).width, ctx.measureText(t2).width) + 26 * dpr, th = 36 * dpr;
+      ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.fillRect(c0[0] - tw / 2, c0[1] - th / 2, tw, th);
+      ctx.fillStyle = { good: '#2e7d32', warn: '#ef6c00', bad: '#c62828' }[mk]; ctx.beginPath(); ctx.arc(c0[0] - tw / 2 + 10 * dpr, c0[1] - 7 * dpr, 4 * dpr, 0, 7); ctx.fill();
+      ctx.fillStyle = '#000'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(t1, c0[0] - tw / 2 + 18 * dpr, c0[1] - 7 * dpr);
+      ctx.font = 12 * dpr + 'px Arial'; ctx.fillStyle = '#444'; ctx.fillText(t2, c0[0] - tw / 2 + 18 * dpr, c0[1] + 8 * dpr);
+    });
+    view = null;
+  }
+  function allRoomAt(e) {
+    var rc = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, pt = new DOMPoint((e.clientX - rc.left) * dpr, (e.clientY - rc.top) * dpr);
+    for (var i = 0; i < allHit.length; i++) { var q = allHit[i].inv.transformPoint(pt); if (M.inside(q.x, q.y, allHit[i].poly)) return allHit[i].r; }
+    return null;
+  }
+  // Сводка по квартире: плитки, вывод по комнатам, таблица слева
+  function aptView() {
+    var A = 0, W = 0, cost = 0, kwh = 0, ok = 0, bad = [], dark = false;
+    var rows = rooms.map(function (r, i) {
+      var x = roomRes(r), vd = withRoom(r, function () { return verdictOf(x); });
+      A += x.area; W += x.W; cost += x.cost; kwh += x.kwh; if (vd.base === 'good') ok++; if (vd.base === 'bad') dark = true;
+      if (vd.cls !== 'good') bad.push(roomName(r) + ': ' + (vd.base === 'bad' ? (x.active ? 'темновато, не хватает ~' + fmt((1 - x.avg / r.E) * 100) + ' % света' : 'нет светильников') : vd.base === 'warn' ? (x.avg > r.E * 1.8 ? 'света с большим запасом' : 'есть тёмные зоны') : 'проверьте предупреждения'));
+      return '<tr data-ri="' + i + '"><td><span class="mk ' + vd.cls + '"></span> ' + esc(roomName(r)) + '</td><td>' + fmt(x.area, 1) + '</td><td>' + fmt(x.avg) + ' / ' + fmt(r.E) + '</td><td>' + fmt(x.W) + '</td></tr>';
+    });
+    $('mlp-apt').innerHTML = '<table class="apt"><thead><tr><th>Комната</th><th>м²</th><th>лк / норма</th><th>Вт</th></tr></thead><tbody>' + rows.join('') +
+      '</tbody><tfoot><tr><td>Всего</td><td>' + fmt(A, 1) + '</td><td></td><td>' + fmt(W) + '</td></tr></tfoot></table>';
+    $('mlp-sum').innerHTML =
+      '<div><b>' + ok + ' из ' + rooms.length + '</b><span>комнат в норме</span></div>' +
+      '<div><b>' + fmt(A, 1) + ' м²</b><span>' + rooms.length + ' ' + plural(rooms.length, 'комната', 'комнаты', 'комнат') + '</span></div>' +
+      '<div><b>' + fmt(W) + ' Вт</b><span>все светильники</span></div>' +
+      '<div><b>' + fmt(cost) + ' сом</b><span>в год · ' + fmt(kwh) + ' кВт·ч</span></div>';
+    var v = $('mlp-verdict');
+    v.className = 'verdict ' + (dark ? 'bad' : bad.length ? 'warn' : 'good');
+    v.textContent = bad.length ? 'Обратите внимание — ' + bad.join('; ') + '. Нажмите на комнату, чтобы поправить.' : 'Во всех комнатах норма выполнена.';
+    $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
+    $('mlp-rec').hidden = true; $('mlp-symrec').hidden = true;
+    renderTabs(); legend(); drawAll();
+    clearTimeout(hT); hT = setTimeout(histRec, 300);
   }
 
   // ---------- Отменить / Вернуть (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z) ----------
   // Снимок всего состояния после каждого пересчёта (с задержкой, чтобы набор числа был одним шагом).
   // Картинка плана в снимок не сериализуется — хранится ссылкой.
+  // Квартира целиком: какая комната открыта — не изменение, но запоминается, чтобы после отмены показать её
   var hT = 0, hist = Hist(function () {
-    return { key: JSON.stringify(st, function (k, v) { return k === 'bg' ? undefined : v; }), bg: st.bg };
+    return { key: JSON.stringify(rooms, function (k, v) { return k === 'img' || k.charAt(0) === '_' ? undefined : v; }),
+      imgs: rooms.map(function (r) { return r.bg ? r.bg.img : null; }), a: all ? -1 : rooms.indexOf(st) };
   }, function (s) {
-    var o = JSON.parse(s.key); for (var k in o) st[k] = o[k]; st.bg = s.bg;
-    root.querySelectorAll('.side [data-k]').forEach(function (el) { el.value = st[el.dataset.k]; });
-    $('mlp-iso').checked = st.iso;
-    renderDims(); renderGroups(); update();
+    // те же объекты комнат обновляем на месте — ссылки на них (MLPlanner.state) остаются живыми
+    var old = rooms; rooms = JSON.parse(s.key).map(function (o, i) {
+      if (o.bg) o.bg.img = s.imgs[i];
+      var r = old[i]; if (!r) return o;
+      Object.keys(r).forEach(function (k) { delete r[k]; }); for (var k in o) r[k] = o[k]; return r;
+    });
+    all = s.a < 0 && rooms.length > 1; st = rooms[Math.max(0, Math.min(rooms.length - 1, s.a))];
+    syncSide(); sideMode(); renderDims(); renderGroups(); update();
   });
   function histRec() { if (tr) return; hist.rec(); histUI(); }
   function histUI() { var c = hist.can(); $('mlp-undo').disabled = !c[0]; $('mlp-redo').disabled = !c[1]; }
@@ -540,10 +750,12 @@
   function legend() {
     $('mlp-bar').style.background = 'linear-gradient(90deg,' + STOPS.map(function (s) { return 'rgb(' + s[1].join(',') + ') ' + s[0] * 100 + '%'; }).join(',') + ')';
     var m = scaleMax();
-    $('mlp-ticks').innerHTML = [0, 0.25, 0.5, 0.75, 1].map(function (t) { return '<span>' + fmt(m * t) + (t === 1 ? '+' : '') + (t === 0.5 ? ' (норма)' : '') + '</span>'; }).join('');
+    $('mlp-ticks').innerHTML = all && !tr ? ['0', '½ нормы', 'норма', '1½ нормы', '2 нормы+'].map(function (t) { return '<span>' + t + '</span>'; }).join('')
+      : [0, 0.25, 0.5, 0.75, 1].map(function (t) { return '<span>' + fmt(m * t) + (t === 1 ? '+' : '') + (t === 0.5 ? ' (норма)' : '') + '</span>'; }).join('');
   }
   function draw(clean) {
     if (tr) { drawTrace(); return; }
+    if (all) { drawAll(clean); return; }
     var poly = makePoly(), bb = M.bbox(poly), dpr = window.devicePixelRatio || 1;
     var cw = cv.clientWidth || 600, pad = 34;
     var maxH = Math.min(640, (window.innerHeight || 800) * 0.72);
@@ -632,6 +844,7 @@
   var lastTap = { t: 0, i: -1 };
   cv.addEventListener('pointerdown', function (e) {
     if (tr) { trDown(e); return; }
+    if (all) { var ar = allRoomAt(e); if (ar) openRoom(ar); return; }
     if (!view) return; var pt = toM(e), h = hit(pt); if (!h) return;
     e.preventDefault(); cv.setPointerCapture(e.pointerId);
     // двойное касание угла на телефоне = удалить угол (dblclick на тачскрине ненадёжен)
@@ -646,6 +859,7 @@
   });
   cv.addEventListener('pointermove', function (e) {
     if (tr) { trMove(e); return; }
+    if (all) { var hr = allRoomAt(e); cv.style.cursor = hr ? 'pointer' : 'default'; if (hr !== allHov) { allHov = hr; drawAll(); } return; }
     if (!view) return; var pt = toM(e);
     if (!drag) { cv.style.cursor = hit(pt) ? 'grab' : 'default'; return; }
     var x = snap(pt[0]), y = snap(pt[1]), poly = makePoly();
@@ -670,6 +884,7 @@
   cv.addEventListener('pointercancel', function (e) { if (tr) trUp(e); else endDrag(); });
   cv.addEventListener('dblclick', function (e) {
     if (tr) { trDbl(e); return; }
+    if (all) return;
     var h = hit(toM(e)); if (!h || h.kind !== 'vtx') return;
     removeVertex(h.i);
   });
@@ -754,9 +969,14 @@
       });
     });
   }
-  function startTrace(img) {
+  // opt.add — новая комната квартиры по тому же плану: уже обведённые комнаты видны бледно, масштаб известен
+  function startTrace(img, opt) {
+    opt = opt || {};
     if (view3d) setView('plan');
-    tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0, auto: true, found: false };
+    var mine = rooms.filter(function (r) { return r.bg && r.bg.img === img && (opt.add || r !== st); });
+    tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0, auto: true, found: false,
+      add: !!opt.add, mpp: mine.length ? mine[0].bg.mpp : 0,
+      others: mine.map(function (r) { var m = bgMatrix(r); return polyOf(r).map(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; }); }) };
     tr.h = Hist(function () { return { key: JSON.stringify([tr.pts, tr.closed, tr.sel, tr.axis]) }; },
       function (s) { var o = JSON.parse(s.key); tr.pts = o[0]; tr.closed = o[1]; tr.sel = o[2]; tr.axis = o[3]; tr.hov = null; trMsg(''); drawTrace(); traceUI(); });
     tr.h.rec();
@@ -764,7 +984,9 @@
     traceUI(); drawTrace();
     root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-  function endTrace() { tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default'; traceUI(); update(); }
+  function endTrace() { tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default'; traceUI(); sideMode(); update(); }
+  // масштаб плана уже известен по другим комнатам — длину выбранной стены подставляем сами (пока клиент не ввёл свою)
+  function trKnown() { if (tr.mpp && tr.closed && tr.sel >= 0 && !tr.typed) $('mlp-tlen').value = (Math.round(wallPx(tr.sel) * tr.mpp * 100) / 100).toFixed(2); }
   function fitTrace() {
     var cw = cv.clientWidth || 600, maxH = Math.min(640, (window.innerHeight || 800) * 0.72), pad = 10, iw = tr.img.width, ih = tr.img.height;
     var sc = Math.min((cw - 2 * pad) / iw, (maxH - 2 * pad) / ih);
@@ -824,6 +1046,10 @@
     cv.style.height = ch + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#f4f4f4'; ctx.fillRect(0, 0, cw, ch);
     ctx.imageSmoothingEnabled = true; ctx.drawImage(tr.img, tr.ox, tr.oy, tr.img.width * tr.sc, tr.img.height * tr.sc);
+    (tr.others || []).forEach(function (o) {
+      ctx.beginPath(); o.map(trS).forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }); ctx.closePath();
+      ctx.fillStyle = 'rgba(46,125,50,.14)'; ctx.fill(); ctx.strokeStyle = 'rgba(46,125,50,.7)'; ctx.lineWidth = 1.5; ctx.stroke();
+    });
     if (!n) return;
     ctx.beginPath(); P.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
     if (tr.closed) { ctx.closePath(); ctx.fillStyle = 'rgba(229,57,53,.12)'; ctx.fill(); }
@@ -852,12 +1078,16 @@
   }
   function traceUI() {
     var on = !!tr;
+    $('mlp-rtabs').hidden = on;
     $('mlp-tbar').hidden = !on;
     root.querySelector('.views').hidden = on; $('mlp-tools2d').hidden = on; $('mlp-hint2d').hidden = on;
     $('mlp-legend').hidden = on || (view3d && mode3d === 'real');
     $('mlp-trace').textContent = st.bg ? 'Загрузить другой план' : 'Обвести по своему плану';
     if (!on) return;
-    $('mlp-tstep').innerHTML = tr.closed
+    $('mlp-tstep').innerHTML = tr.closed && tr.mpp && !tr.typed
+      ? '<b>Шаг 2 из 2.</b> ' + (tr.found ? 'Стены найдены автоматически, масштаб — как у других комнат. ' : 'Масштаб — как у других комнат. ') +
+        'Проверьте контур (углы можно перетащить) и нажмите «Готово».'
+      : tr.closed
       ? (tr.found ? '<b>Шаг 2 из 2.</b> Стены найдены автоматически — проверьте контур: углы можно перетащить, лишний убрать двойным щелчком, не та комната — «Заново». ' : '<b>Шаг 2 из 2.</b> ') +
         'Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
       : tr.auto ? '<b>Шаг 1 из 2.</b> Нажмите внутри нужной комнаты — стены найдутся сами. Если план сложный, обведите углы вручную.'
@@ -929,7 +1159,7 @@
         t.pts = r.pts.map(function (q) { return [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]; });
         t.closed = true; t.found = true; t.axis = r.axis; t.hov = null;
         t.sel = 0; for (var i = 1; i < t.pts.length; i++) if (wallPx(i) > wallPx(t.sel)) t.sel = i;
-        trMsg(''); t.h.rec(); drawTrace(); traceUI(); $('mlp-tlen').focus();
+        trKnown(); trMsg(''); t.h.rec(); drawTrace(); traceUI(); if (!t.mpp) $('mlp-tlen').focus();
       }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет или обведите углы вручную.'); })
       .then(function () { t.busy = false; if (tr === t) cv.style.cursor = 'crosshair'; });
   }
@@ -938,13 +1168,13 @@
     trMsg('');
     if (tr.closed) {
       var w = trHitWall(s); if (w < 0) return;
-      tr.sel = w; $('mlp-tlen').focus(); return;
+      tr.sel = w; trKnown(); $('mlp-tlen').focus(); return;
     }
     if (idx === 0 && tr.pts.length >= 3) {
       if (!M.isSimple(tr.pts)) { trMsg('Стены пересекаются — передвиньте точки или отмените последнюю.'); return; }
       tr.closed = true; tr.hov = null;
       tr.sel = 0; for (var i = 1; i < tr.pts.length; i++) if (wallPx(i) > wallPx(tr.sel)) tr.sel = i; // по умолчанию — самая длинная стена
-      setTimeout(function () { $('mlp-tlen').focus(); }, 0);
+      trKnown(); if (!tr.mpp) setTimeout(function () { $('mlp-tlen').focus(); }, 0);
       return;
     }
     if (idx >= 0) return;
@@ -965,11 +1195,14 @@
     poly = poly.map(function (p) { return [Math.round((p[0] - bb.x0) * 100) / 100, Math.round((p[1] - bb.y0) * 100) / 100]; });
     if (!M.isSimple(poly)) { trMsg('Контур пересекает сам себя или слишком маленький — поправьте точки.'); return; }
     if (bb.w > 60 || bb.h > 60) { trMsg('Комната получается больше 60 м — проверьте длину стены.'); return; }
+    var add = tr.add;
+    if (add) { var nr = newRoom(); rooms.push(nr); st = nr; all = false; }
     st.bg = { img: tr.img, mpp: mpp, ax: ax, p0: p0, sh: [bb.x0, bb.y0], show: true };
     $('mlp-bgshow').checked = true;
     st.shape = 'custom'; st.poly = poly;
+    if (add) { starterLights(); syncSide(); }
     tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default';
-    traceUI(); renderDims(); relayoutAll();
+    traceUI(); sideMode(); renderDims(); renderGroups(); relayoutAll();
   }
   cv.addEventListener('wheel', function (e) {
     if (!tr) return; e.preventDefault();
@@ -1004,11 +1237,15 @@
     }
     if (e.target.closest('#mlp-redo')) { histGo(false); return; }
     if (e.target.closest('#mlp-trace')) { $('mlp-file').click(); return; }
+    if (e.target.closest('[data-rdel]')) { delRoom(); return; }
+    var rt = e.target.closest('[data-rt]');
+    if (rt) { var v2 = rt.dataset.rt; if (v2 === 'all') openAll(); else if (v2 === 'add') addRoom(); else if (rooms[+v2] !== st || all) openRoom(rooms[+v2]); return; }
+    var ri = e.target.closest('[data-ri]'); if (ri) { openRoom(rooms[+ri.dataset.ri]); return; }
     if (tr) {
       if (e.target.closest('#mlp-tdone')) { finishTrace(); return; }
       if (e.target.closest('#mlp-tundo')) { tr.h.undo(); return; }
       if (e.target.closest('#mlp-tredo')) { tr.h.redo(); return; }
-      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
+      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.typed = false; $('mlp-tlen').value = ''; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
       if (e.target.closest('#mlp-tmode')) { tr.auto = !tr.auto; trMsg(''); traceUI(); return; }
       if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
     }
@@ -1025,12 +1262,12 @@
     if (t.id === 'mlp-iso') { st.iso = t.checked; draw(); return; }
     if (t.id === 'mlp-bgshow') { if (st.bg) st.bg.show = t.checked; draw(); return; }
     if (t.id === 'mlp-tortho') { if (tr) tr.ortho = t.checked; return; }
-    if (t.id === 'mlp-tlen') { if (tr) { drawTrace(); traceUI(); } return; }
+    if (t.id === 'mlp-tlen') { if (tr) { tr.typed = true; drawTrace(); traceUI(); } return; }
     if (t.id === 'mlp-file') return;
     if (k) {
       if (k === 'room') { st.room = +t.value; var n = ROOMS[st.room][1]; if (n) { st.E = n; root.querySelector('[data-k="E"]').value = n; } }
       else if (k === 'refl' || k === 'kz') st[k] = +t.value;
-      else { st[k] = num(t.value); if (/^(a|b|ca|cb)$/.test(k)) { if (e.type !== 'change' && !(st[k] > 0.4)) return; st.poly = makePoly(); relayoutAll(); return; } }
+      else { st[k] = num(t.value); if (k === 'tariff') rooms.forEach(function (r) { r.tariff = st.tariff; }); if (/^(a|b|ca|cb)$/.test(k)) { if (e.type !== 'change' && !(st[k] > 0.4)) return; st.poly = makePoly(); relayoutAll(); return; } }
       update(); return;
     }
     if (f) {
@@ -1062,6 +1299,12 @@
     return ROOMS[st.room][0] + ', ' + fmt(res.area, 1) + ' м²' + (st.shape === 'rect' ? ' (' + fmt(st.a, 1) + ' × ' + fmt(st.b, 1) + ' м)' : '') + ', потолок ' + fmt(st.H, 2) + ' м';
   }
   function waText() {
+    if (rooms.length > 1) {
+      return 'Здравствуйте! Расчёт квартиры из планировщика освещения на сайте:\n' + rooms.map(function (r) {
+        var x = roomRes(r);
+        return withRoom(r, function () { res = x; return '• ' + roomName(r) + ', ' + fmt(x.area, 1) + ' м²: ' + (groupsText().join('; ') || 'без светильников') + ' — ' + fmt(x.avg) + ' лк при норме ' + fmt(st.E); });
+      }).join('\n') + '\nПомогите подобрать светильники.';
+    }
     return 'Здравствуйте! Расчёт из планировщика освещения на сайте:\n' +
       '• Комната: ' + roomText() + '\n' +
       '• Светильники: ' + (groupsText().join('; ') || 'нет') + '\n' +
@@ -1075,34 +1318,55 @@
     if (!window.html2canvas) p = p.then(function () { return load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'); });
     if (!(window.jspdf && window.jspdf.jsPDF)) p = p.then(function () { return load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'); });
     p.then(function () {
-      var box = document.createElement('div'), d = new Date().toLocaleDateString('ru-RU');
-      box.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;padding:36px;background:#fff;color:#000;font:13px Arial,sans-serif;line-height:1.45';
-      function tbl(rs) { return '<table style="width:100%;border-collapse:collapse;margin:6px 0 18px">' + rs.map(function (r) { return '<tr><td style="padding:5px 0;border-bottom:1px solid #ddd;color:#555">' + esc(r[0]) + '</td><td style="padding:5px 0;border-bottom:1px solid #ddd;text-align:right;font-weight:600">' + esc(r[1]) + '</td></tr>'; }).join('') + '</table>'; }
-      var was3d = view3d; if (was3d) { cv.hidden = false; } // план рисуется только на видимом холсте
-      draw(true); var plan = cv.toDataURL('image/png'), ratio = cv.height / cv.width; draw();
-      if (was3d) cv.hidden = true;
-      var shot = window.MLP3D && window.MLP3D.ready() ? window.MLP3D.snapshot() : null; // 3D — если его открывали
-      var iw = shot ? 340 : 688, ih = Math.min(shot ? 300 : 560, iw * ratio), pw = ih < iw * ratio ? ih / ratio : iw;
-      box.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:22px;font-weight:700">Moonlight</div><div style="color:#555">moonlight-kg.store · ' + d + '</div></div>' +
-        '<div style="font-size:19px;font-weight:600;margin:18px 0 10px">План освещения</div>' +
-        '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:6px"><img src="' + plan + '" style="display:block;width:' + pw + 'px;height:' + ih + 'px">' +
-        (shot ? '<img src="' + shot + '" style="display:block;width:340px;height:' + ih + 'px;object-fit:cover;border-radius:6px">' : '') + '</div>' +
-        '<div style="height:8px;border-radius:4px;background:' + $('mlp-bar').style.background + '"></div>' +
-        '<div style="display:flex;justify-content:space-between;color:#555;font-size:11px;margin:2px 0 14px">' + $('mlp-ticks').innerHTML + '</div>' +
-        '<div style="display:flex;gap:28px;margin-bottom:10px">' +
-          [[fmt(res.avg) + ' лк', 'средняя (норма ' + fmt(st.E) + ')'], [fmt(res.min) + ' лк', 'минимум'], [fmt(res.u0, 2), 'равномерность'], [fmt(res.W) + ' Вт', 'мощность']].map(function (r) { return '<div><div style="font-size:24px;font-weight:700">' + r[0] + '</div><div style="color:#555">' + r[1] + '</div></div>'; }).join('') + '</div>' +
-        '<div style="padding:8px 12px;background:#f4f4f4;border-radius:6px;margin-bottom:14px">' + esc($('mlp-verdict').textContent) + '</div>' +
-        tbl([['Помещение', roomText()], ['Рабочая поверхность', fmt(st.wp, 2) + ' м'], ['Отделка', REFL[st.refl][0]], ['Условия', KZ[st.kz][0]], ['Электричество', fmt(res.kwh) + ' кВт·ч/год ≈ ' + fmt(res.cost) + ' сом (' + fmt(st.hours, 1) + ' ч/день)']].concat(
-          st.groups.map(function (g) { return ['Группа ' + letterOf(g) + (g.on === false ? ' (выключена)' : ''), g.pos.length + ' шт. · ' + M.TYPES[g.type].name + ' · ' + fmt(lumFlux(g)) + ' лм / ' + fmt(lumWatts(g), 1) + ' Вт']; }))) +
-        '<div style="color:#777;font-size:11px">Ориентировочный расчёт по типовым кривым света (точечный метод с учётом отражений). Не заменяет светотехнический проект.</div>';
-      document.body.appendChild(box);
-      return window.html2canvas(box, { scale: 2, backgroundColor: '#fff' }).then(function (c) {
-        document.body.removeChild(box);
-        var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), pw = 210, ph = c.height * pw / c.width;
-        if (ph > 297) { pw = 297 * c.width / c.height; ph = 297; }
-        pdf.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', (210 - pw) / 2, 0, pw, ph);
-        pdf.save('plan-osveshheniya.pdf');
+      var d = new Date().toLocaleDateString('ru-RU'), pages = [];
+      function tbl(rs) { return '<table style="width:100%;border-collapse:collapse;margin:6px 0 18px">' + rs.map(function (r) { return '<tr>' + r.map(function (c, j) { return '<td style="padding:5px 4px;border-bottom:1px solid #ddd;' + (j ? 'text-align:right;font-weight:600' : 'color:#555') + '">' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</table>'; }
+      var head = '<div style="display:flex;justify-content:space-between;align-items:baseline"><div style="font-size:22px;font-weight:700">Moonlight</div><div style="color:#555">moonlight-kg.store · ' + d + '</div></div>';
+      var foot = '<div style="color:#777;font-size:11px">Ориентировочный расчёт по типовым кривым света (точечный метод с учётом отражений). Не заменяет светотехнический проект.</div>';
+      function tiles(ts) { return '<div style="display:flex;gap:28px;margin-bottom:10px">' + ts.map(function (r) { return '<div><div style="font-size:24px;font-weight:700">' + r[0] + '</div><div style="color:#555">' + r[1] + '</div></div>'; }).join('') + '</div>'; }
+      function scale() { return '<div style="height:8px;border-radius:4px;background:' + $('mlp-bar').style.background + '"></div><div style="display:flex;justify-content:space-between;color:#555;font-size:11px;margin:2px 0 14px">' + $('mlp-ticks').innerHTML + '</div>'; }
+      var wasAll = all, cur = st, was3d = view3d; if (was3d) cv.hidden = false; // план рисуется только на видимом холсте
+      var shot = window.MLP3D && window.MLP3D.ready() ? window.MLP3D.snapshot() : null; // 3D — если его открывали (для открытой комнаты)
+      if (rooms.length > 1) {
+        all = true; legend(); drawAll(true); var ap = cv.toDataURL('image/png'), ar = cv.height / cv.width;
+        var aw = Math.min(688, 520 / ar), A = 0, W = 0, cost = 0, ok = 0;
+        var rws = [['Комната', 'м²', 'лк / норма', 'Вт']].concat(rooms.map(function (r) {
+          var x = roomRes(r), vd = withRoom(r, function () { return verdictOf(x); }); A += x.area; W += x.W; cost += x.cost; if (vd.base === 'good') ok++;
+          return [roomName(r) + (vd.cls === 'good' ? '' : vd.base === 'bad' ? ' — мало света' : vd.base === 'warn' ? (x.avg > r.E * 1.8 ? ' — света с запасом' : ' — тёмные зоны') : ' — см. предупреждения'), fmt(x.area, 1), fmt(x.avg) + ' / ' + fmt(r.E), fmt(x.W)];
+        }));
+        pages.push(head + '<div style="font-size:19px;font-weight:600;margin:18px 0 10px">План освещения квартиры</div>' +
+          '<img src="' + ap + '" style="display:block;margin:0 auto 6px;width:' + aw + 'px;height:' + aw * ar + 'px">' + scale() +
+          tiles([[ok + ' из ' + rooms.length, 'комнат в норме'], [fmt(A, 1) + ' м²', 'площадь'], [fmt(W) + ' Вт', 'мощность'], [fmt(cost) + ' сом', 'в год']]) + tbl(rws) + foot);
+      }
+      all = false;
+      rooms.forEach(function (r) {
+        st = r; res = roomRes(r); legend();
+        draw(true); var plan = cv.toDataURL('image/png'), ratio = cv.height / cv.width;
+        var sh = r === cur ? shot : null, iw = sh ? 340 : 688, ih = Math.min(sh ? 300 : 560, iw * ratio), pw = ih < iw * ratio ? ih / ratio : iw, vd = verdictOf(res);
+        pages.push(head + '<div style="font-size:19px;font-weight:600;margin:18px 0 10px">' + (rooms.length > 1 ? esc(roomName(r)) + ' — план освещения' : 'План освещения') + '</div>' +
+          '<div style="display:flex;gap:8px;justify-content:center;align-items:center;margin-bottom:6px"><img src="' + plan + '" style="display:block;width:' + pw + 'px;height:' + ih + 'px">' +
+          (sh ? '<img src="' + sh + '" style="display:block;width:340px;height:' + ih + 'px;object-fit:cover;border-radius:6px">' : '') + '</div>' + scale() +
+          tiles([[fmt(res.avg) + ' лк', 'средняя (норма ' + fmt(st.E) + ')'], [fmt(res.min) + ' лк', 'минимум'], [fmt(res.u0, 2), 'равномерность'], [fmt(res.W) + ' Вт', 'мощность']]) +
+          '<div style="padding:8px 12px;background:#f4f4f4;border-radius:6px;margin-bottom:14px">' + esc(vd.txt) + '</div>' +
+          tbl([['Помещение', roomText()], ['Рабочая поверхность', fmt(st.wp, 2) + ' м'], ['Отделка', REFL[st.refl][0]], ['Условия', KZ[st.kz][0]], ['Электричество', fmt(res.kwh) + ' кВт·ч/год ≈ ' + fmt(res.cost) + ' сом (' + fmt(st.hours, 1) + ' ч/день)']].concat(
+            st.groups.map(function (g) { return ['Группа ' + letterOf(g) + (g.on === false ? ' (выключена)' : ''), g.pos.length + ' шт. · ' + M.TYPES[g.type].name + ' · ' + fmt(lumFlux(g)) + ' лм / ' + fmt(lumWatts(g), 1) + ' Вт']; }))) + foot);
       });
+      st = cur; all = wasAll; res = roomRes(st); legend(); draw();
+      if (was3d) cv.hidden = true;
+      var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' }), chain = Promise.resolve();
+      pages.forEach(function (html, i) {
+        chain = chain.then(function () {
+          var box = document.createElement('div');
+          box.style.cssText = 'position:fixed;left:-10000px;top:0;width:760px;padding:36px;background:#fff;color:#000;font:13px Arial,sans-serif;line-height:1.45';
+          box.innerHTML = html; document.body.appendChild(box);
+          return window.html2canvas(box, { scale: 2, backgroundColor: '#fff' }).then(function (c) {
+            document.body.removeChild(box);
+            var pw = 210, ph = c.height * pw / c.width; if (ph > 297) { pw = 297 * c.width / c.height; ph = 297; }
+            if (i) pdf.addPage();
+            pdf.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', (210 - pw) / 2, 0, pw, ph);
+          });
+        });
+      });
+      return chain.then(function () { pdf.save(rooms.length > 1 ? 'plan-osveshheniya-kvartiry.pdf' : 'plan-osveshheniya.pdf'); });
     }).catch(function () { alert('Не удалось создать PDF. Проверьте интернет и попробуйте ещё раз.'); })
       .then(function () { btn.disabled = false; btn.textContent = 'Скачать расчёт в PDF'; });
   });
@@ -1133,7 +1397,7 @@
   var rw = 0; window.addEventListener('resize', function () { fitHeader(); clearTimeout(rw); rw = setTimeout(draw, 100); });
 
   st.poly = makePoly(); addGroup('pendant'); addGroup('spot');
-  renderDims(); renderGroups(); legend(); update();
+  renderDims(); renderGroups(); legend(); update(); renderTabs();
   clearTimeout(hT); histRec(); // исходное состояние — первая точка истории
-  window.MLPlanner = { state: st, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
+  window.MLPlanner = { get state() { return st; }, rooms: function () { return rooms; }, openRoom: function (i) { openRoom(rooms[i]); }, openAll: openAll, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
 })();

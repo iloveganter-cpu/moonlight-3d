@@ -89,6 +89,7 @@
     '.mlp .mk{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.mlp .mk.good{background:#2e7d32}.mlp .mk.warn{background:#ef6c00}.mlp .mk.bad{background:#c62828}' +
     '.mlp .apt{width:100%;border-collapse:collapse;font-size:13px}.mlp .apt td,.mlp .apt th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.mlp .apt td:first-child,.mlp .apt th:first-child{text-align:left}' +
     '.mlp .apt th{font-weight:400;color:var(--mute);font-size:12px}.mlp .apt tr[data-ri]{cursor:pointer}.mlp .apt tr[data-ri]:hover{background:var(--soft)}.mlp .apt tfoot td{font-weight:600;border-bottom:0}' +
+    '.mlp .fxrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}.mlp .fxrow .sw2{width:16px;height:16px;border-radius:3px;flex:none}.mlp .fxrow select{width:auto;height:30px}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
     '@media (max-width:480px){.mlp h2{font-size:23px}.mlp .row.m1{grid-template-columns:minmax(0,1fr)}.mlp .seg button{font-size:11px}.mlp .sum b{font-size:20px}}';
@@ -106,7 +107,7 @@
         '<div class="seg" id="mlp-shape">' + SHAPES.map(function (s) { return '<button type="button" data-shape="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
         '<div class="row" id="mlp-dims"></div>' +
         '<div class="tools" style="margin:0 0 4px"><button type="button" class="btn small ghost" id="mlp-trace">Обвести по своему плану</button>' +
-          '<input type="file" id="mlp-file" accept="image/*,.pdf,application/pdf" hidden></div>' +
+          '<input type="file" id="mlp-file" accept="image/*,.pdf,application/pdf" hidden><input type="file" id="mlp-ffile" accept="image/*,.pdf,application/pdf" hidden></div>' +
         '<div class="hint" style="margin:0 0 12px">Фото или скан плана (БТИ, от застройщика, от дизайнера) — картинка или PDF.</div>' +
         '<div class="row three"><div><label>Потолок, м</label><input data-k="H" type="number" step="0.05" min="1.8"></div>' +
           '<div><label>Рабочая пов., м</label><input data-k="wp" type="number" step="0.05" min="0" max="1.2"></div>' +
@@ -122,7 +123,7 @@
     '</div><div class="main">' +
       '<div class="rtabs" id="mlp-rtabs"></div>' +
       '<div class="plan"><div class="views"><button type="button" data-view="plan" class="on">План</button><button type="button" data-view="3d">3D</button></div>' +
-        '<div class="tbar" id="mlp-tbar" hidden><div id="mlp-tstep"></div><div class="tools">' +
+        '<div class="tbar" id="mlp-tbar" hidden><div id="mlp-tstep"></div><div id="mlp-fxlist" hidden></div><div class="tools">' +
           '<span class="tlen" id="mlp-tlenrow"><input id="mlp-tlen" type="number" min="0.3" step="0.01" inputmode="decimal" placeholder="Длина"> м</span>' +
           '<button type="button" class="btn small" id="mlp-tdone">Готово</button>' +
           '<button type="button" class="btn small ghost" id="mlp-tundo" title="Ctrl+Z">Отменить</button>' +
@@ -291,7 +292,7 @@
     return { pos: best, alt: alt, note: note };
   }
   function relayoutSpots() {
-    var gs = spotGroups();
+    var gs = spotGroups().filter(function (g) { return !g.fixed; });
     gs.forEach(function (g) { g.count = Math.max(0, Math.round(g.count)); });
     var r = spotPlan(gs.map(function (g) { return g.count; }));
     gs.forEach(function (g, i) { g.pos = r.pos[i]; g.note = g.count ? r.note : ''; g.alt = null; });
@@ -304,6 +305,7 @@
   function relayout(g) { if (!isSpot(g)) relayoutOne(g); if (!isWallG(g)) relayoutSpots(); }
   function isWallG(g) { return M.TYPES[g.type].mount === 'wall'; }
   function relayoutOne(g) {
+    if (g.fixed) return;
     var n = Math.max(0, Math.round(g.count)), poly = makePoly(); g.note = ''; g.alt = null;
     if (M.TYPES[g.type].mount === 'wall' || n === 0) { g.pos = M.layout(poly, n, M.TYPES[g.type].mount); return; }
     var sym = M.symLayout(poly, n, { fixed: fixedFor(g) });
@@ -345,7 +347,7 @@
     return d > 0 ? '+' + d + ' в группу ' + letterOf(last) : '−' + (-d) + (last.count >= -d ? ' из группы ' + letterOf(last) : ' с последних групп');
   }
   function relayoutAll() {
-    st.groups.forEach(function (g) { g.pos = []; });
+    st.groups.forEach(function (g) { if (!g.fixed) g.pos = []; });
     st.groups.filter(function (g) { return !isSpot(g); }).forEach(relayoutOne);
     relayoutSpots();
     renderGroups(); // количество могло подстроиться под симметрию — обновляем поля и заметки
@@ -461,6 +463,7 @@
         (on && rooms.length > 1 ? '<span class="rx" data-rdel title="Удалить комнату">×</span>' : '') + '</button>';
     });
     h += '<button type="button" class="add" data-rt="add">+ Добавить комнату</button>';
+    if (planImg()) h += '<button type="button" class="add" data-rt="fix">Светильники из проекта</button>';
     box.innerHTML = h;
   }
   // Новая комната: общие параметры квартиры — как у текущей, тип — первый ещё не занятый
@@ -667,6 +670,7 @@
     var box = $('mlp-rec'); recApply = null; box.hidden = true;
     if (!res || drag) return;
     if (res.active && res.avg >= st.E * 0.9 && res.u0 >= 0.4) return;
+    if (st.groups.some(function (g) { return g.fixed; })) return; // расстановка по проекту — места не предлагаем менять
     var poly = makePoly(), room = { poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] };
     // Все споты считаются одной сеткой: перебираем общее количество, добавку отдаём последней включённой группе
     var gs = spotGroups(), tg = gs.filter(function (g) { return g.on !== false; }).pop() || gs[gs.length - 1], isNew = !tg;
@@ -901,20 +905,23 @@
     x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
     return c;
   }
-  function loadPlan(file) {
+  // lit — ищем лист со светильниками (иначе — обмерный план)
+  function pdfPage(doc, n) {
+    return doc.getPage(n).then(function (pg) {
+      var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 2400 / Math.max(v1.width, v1.height) });
+      var c = document.createElement('canvas'), x = c.getContext('2d');
+      c.width = Math.round(vp.width); c.height = Math.round(vp.height); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+      // intent 'print' — без requestAnimationFrame, иначе в фоновой вкладке рендер стоит
+      return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { c._pdf = { doc: doc, n: n }; return c; });
+    });
+  }
+  function loadPlan(file, lit) {
     if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) {
       return (window.pdfjsLib ? Promise.resolve() : load(PDFJS + 'pdf.min.js')).then(function () {
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
         return file.arrayBuffer();
       }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; })
-        .then(function (doc) { return doc.numPages > 1 ? pickPage(doc).then(function (n) { return doc.getPage(n); }) : doc.getPage(1); })
-        .then(function (pg) {
-          var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 2400 / Math.max(v1.width, v1.height) });
-          var c = document.createElement('canvas'), x = c.getContext('2d');
-          c.width = Math.round(vp.width); c.height = Math.round(vp.height); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
-          // intent 'print' — без requestAnimationFrame, иначе в фоновой вкладке рендер стоит
-          return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { return c; });
-        });
+        .then(function (doc) { return (doc.numPages > 1 ? pickPage(doc, lit) : Promise.resolve(1)).then(function (n) { return pdfPage(doc, n); }); });
     }
     return new Promise(function (ok, no) {
       var url = URL.createObjectURL(file), im = new Image();
@@ -925,16 +932,19 @@
   }
   // Дизайн-проект — десятки листов (обложка, ведомость, планы, развёртки): показываем миниатюры, лист с обмерным
   // планом подсвечиваем по тексту. Кириллица в PDF из старых программ бывает записана как latin-1 (cp1251) — чиним.
-  function pageScore(t) {
+  function pageScore(t, lit) {
     t = t.replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).toLowerCase();
     var n = (t.match(/план/g) || []).length;
     if (n > 4 || /ведомост/.test(t)) return 0; // ведомость чертежей перечисляет все листы
+    // название листа «План (привязки) осветительных приборов / освещения» важнее слова «светильник» в примечаниях
+    if (lit) return /план[а-я\s]{0,25}(осветит|светильник|освещени)/.test(t) ? 4 : /осветит|светильник/.test(t) ? 3 : /освещени|софит|спот/.test(t) ? 2 : /потолк/.test(t) ? 1 : 0;
     return /обмер/.test(t) ? 3 : /экспликац/.test(t) ? 2 : n ? 1 : 0;
   }
-  function pickPage(doc) {
+  function pickPage(doc, lit) {
     var box = $('mlp-pages'), grid = $('mlp-pgrid'), N = doc.numPages, done = false, best = 1, bs = 0;
     if (view3d) setView('plan');
-    grid.innerHTML = ''; box.hidden = false; $('mlp-pmsg').textContent = 'В файле ' + N + ' стр. Выберите лист с планом квартиры — лучше обмерный, без мебели.';
+    grid.innerHTML = ''; box.hidden = false;
+    $('mlp-pmsg').textContent = 'В файле ' + N + ' стр. ' + (lit ? 'Выберите лист, где нарисованы светильники (план освещения, привязка светильников).' : 'Выберите лист с планом квартиры — лучше обмерный, без мебели.');
     root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
     var btns = [];
     for (var i = 1; i <= N; i++) {
@@ -948,7 +958,7 @@
       // по порядку: текст листа (подсветка подходящего обновляется по ходу) и миниатюра
       function mark(n) {
         btns.forEach(function (b, k) { b.classList.remove('best'); b.querySelector('.pn').textContent = k + 1; });
-        btns[n - 1].classList.add('best'); btns[n - 1].querySelector('.pn').textContent = n + ' · похоже на план';
+        btns[n - 1].classList.add('best'); btns[n - 1].querySelector('.pn').textContent = n + (lit ? ' · похоже на свет' : ' · похоже на план');
       }
       var p = Promise.resolve();
       btns.forEach(function (b, k) {
@@ -956,7 +966,7 @@
           if (done) return;
           return doc.getPage(k + 1).then(function (pg) {
             return pg.getTextContent().then(function (tc) {
-              var s = pageScore(tc.items.map(function (x) { return x.str; }).join(' ')); if (s > bs) { bs = s; best = k + 1; mark(best); }
+              var s = pageScore(tc.items.map(function (x) { return x.str; }).join(' '), lit); if (s > bs) { bs = s; best = k + 1; mark(best); }
             }, function () {}).then(function () {
               if (done) return;
               var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 220 / Math.max(v1.width, v1.height) });
@@ -1046,6 +1056,7 @@
     cv.style.height = ch + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#f4f4f4'; ctx.fillRect(0, 0, cw, ch);
     ctx.imageSmoothingEnabled = true; ctx.drawImage(tr.img, tr.ox, tr.oy, tr.img.width * tr.sc, tr.img.height * tr.sc);
+    if (tr.fx) { drawFx(); return; }
     (tr.others || []).forEach(function (o) {
       ctx.beginPath(); o.map(trS).forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); }); ctx.closePath();
       ctx.fillStyle = 'rgba(46,125,50,.14)'; ctx.fill(); ctx.strokeStyle = 'rgba(46,125,50,.7)'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -1083,7 +1094,10 @@
     root.querySelector('.views').hidden = on; $('mlp-tools2d').hidden = on; $('mlp-hint2d').hidden = on;
     $('mlp-legend').hidden = on || (view3d && mode3d === 'real');
     $('mlp-trace').textContent = st.bg ? 'Загрузить другой план' : 'Обвести по своему плану';
+    $('mlp-fxlist').hidden = !(on && tr.fx);
     if (!on) return;
+    if (tr.fx) { fxUI(); return; }
+    ['mlp-tundo', 'mlp-tredo', 'mlp-treset'].forEach(function (id) { $(id).hidden = false; }); $('mlp-tdone').textContent = 'Готово';
     $('mlp-tstep').innerHTML = tr.closed && tr.mpp && !tr.typed
       ? '<b>Шаг 2 из 2.</b> ' + (tr.found ? 'Стены найдены автоматически, масштаб — как у других комнат. ' : 'Масштаб — как у других комнат. ') +
         'Проверьте контур (углы можно перетащить) и нажмите «Готово».'
@@ -1164,6 +1178,7 @@
       .then(function () { t.busy = false; if (tr === t) cv.style.cursor = 'crosshair'; });
   }
   function trTap(s, idx) {
+    if (tr.fx) { fxTap(s); return; }
     if (!tr.closed && tr.auto && !tr.pts.length) { autoFind(trI(s)); return; }
     trMsg('');
     if (tr.closed) {
@@ -1204,6 +1219,132 @@
     tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default';
     traceUI(); sideMode(); renderDims(); renderGroups(); relayoutAll();
   }
+  // ---------- Светильники из дизайн-проекта ----------
+  // Лист со светильниками совмещаем с листом, по которому обведены комнаты, находим значки (автоматически
+  // и по нажатию на образец), клиент проверяет метки и типы, переносим — светильники встают по местам в комнатах.
+  var FIXK = [['spot', 'Спот, софит'], ['pendant', 'Люстра, подвес'], ['ceiling', 'Плафон'], ['wall', 'Бра'], ['off', 'Не светильник']];
+  var FXC = ['#00c853', '#2962ff', '#ff6d00', '#d500f9', '#00b8d4', '#c51162'];
+  function startFix() {
+    var img = planImg(); if (!img || tr) return;
+    var btn = root.querySelector('[data-rt="fix"]'); if (btn) { btn.disabled = true; btn.textContent = 'Открываем лист…'; }
+    var p = img._pdf
+      ? (img._pdf.doc.numPages > 1 ? pickPage(img._pdf.doc, true) : Promise.resolve(img._pdf.n)).then(function (n) { return pdfPage(img._pdf.doc, n); })
+      : new Promise(function (ok, no) { // план был картинкой — лист со светильниками загружают отдельно
+        var inp = $('mlp-ffile'); inp.value = '';
+        inp.onchange = function () { var fl = inp.files && inp.files[0]; if (!fl) { no('cancel'); return; } loadPlan(fl, true).then(ok, no); };
+        inp.click(); setTimeout(function () { if (btn) { btn.disabled = false; btn.textContent = 'Светильники из проекта'; } }, 1500);
+      });
+    p.then(function (lim) { fixTrace(img, lim); }, function (e) { if (e !== 'cancel') alert('Не удалось открыть лист. Подойдёт PDF дизайн-проекта или картинка с планом светильников.'); renderTabs(); });
+  }
+  function fixTrace(img, lim) {
+    startTrace(lim, { fx: true });
+    var t = tr; t.fx = { src: img, groups: [], busy: true }; t.auto = false;
+    trMsg('Совмещаем лист с комнатами и ищем светильники…'); traceUI(); drawTrace();
+    (window.MLPFix ? Promise.resolve() : loadScript(BASE + 'fixtures.js' + VER))
+      .then(function () { return new Promise(function (ok) { setTimeout(ok, 40); }); })
+      .then(function () {
+        if (tr !== t) return;
+        var mine = rooms.filter(function (r) { return r.bg && r.bg.img === img; });
+        var polys = mine.map(function (r) { var m = bgMatrix(r); return polyOf(r).map(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; }); });
+        var R = window.MLPFix.register(polys, img, lim, 4 / mine[0].bg.mpp); // стены в радиусе 4 м вокруг обведённых комнат
+        if (!R) { trMsg('Не удалось совместить этот лист с планом комнат. Попробуйте другой лист.'); return; }
+        t.fx.reg = R; t.fx.rooms = mine; t.fx.polys = polys; t.fx.ppm = R.s / mine[0].bg.mpp; // пикселей листа на метр
+        window.MLPFix.auto(lim, t.fx.ppm).forEach(function (g) { fxAdd(t, g, g.kind === 'pendant' || g.pts.length >= 8); });
+        trMsg(t.fx.groups.length ? '' : 'Значки светильников автоматически не нашлись — нажмите на любой значок светильника на листе, найдём все такие же.');
+      }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет.'); })
+      .then(function () { if (tr === t) { t.fx.busy = false; traceUI(); drawTrace(); } });
+  }
+  // пиксель листа → комната и метры в ней (или null — вне комнат: легенда, таблицы, надписи)
+  function fxWhere(t, p) {
+    var R = t.fx.reg, o = new DOMPoint((p[0] - R.tx) / R.s, (p[1] - R.ty) / R.s);
+    for (var i = 0; i < t.fx.rooms.length; i++) {
+      var r = t.fx.rooms[i], q = bgMatrix(r).inverse().transformPoint(o);
+      if (M.inside(q.x, q.y, polyOf(r))) return { r: r, m: [q.x, q.y] };
+    }
+    return null;
+  }
+  function fxAdd(t, g, on) {
+    g.pts = g.pts.filter(function (p) { return fxWhere(t, p); });
+    if (!g.pts.length) return 0;
+    // эти же значки уже найдены другой группой — та группа заменяется новой
+    t.fx.groups = t.fx.groups.filter(function (o) {
+      var same = o.pts.filter(function (p) { return g.pts.some(function (q) { return Math.hypot(q[0] - p[0], q[1] - p[1]) < 6; }); }).length;
+      return same < o.pts.length / 2;
+    });
+    g.on = on !== false; g.type = g.kind;
+    var used = t.fx.groups.map(function (o) { return o.col; }); g.col = FXC.filter(function (c) { return used.indexOf(c) < 0; })[0] || FXC[t.fx.groups.length % FXC.length];
+    t.fx.groups.push(g); return g.pts.length;
+  }
+  function drawFx() {
+    var F = tr.fx; if (!F.reg) return;
+    var R = F.reg, L = function (p) { return trS([p[0] * R.s + R.tx, p[1] * R.s + R.ty]); };
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,160,0,.85)';
+    F.polys.forEach(function (P) { ctx.beginPath(); P.forEach(function (p, i) { var q = L(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); });
+    F.groups.forEach(function (g) {
+      var on = g.on && g.type !== 'off', rr = Math.max(6, Math.max(g.w, g.h) * tr.sc / 2 + 3);
+      ctx.lineWidth = on ? 2.5 : 1.5; ctx.strokeStyle = on ? g.col : 'rgba(110,110,110,.7)';
+      g.pts.forEach(function (p) { var q = trS(p); ctx.strokeRect(q[0] - rr, q[1] - rr, 2 * rr, 2 * rr); });
+    });
+  }
+  function fxTap(s) {
+    var t = tr, F = t.fx; if (F.busy || !F.reg) return;
+    // нажали на метку включённой группы — убрать её (лишняя); на серую (выключенную) или пустое место — искать такие же
+    for (var j = 0; j < F.groups.length; j++) {
+      var g = F.groups[j], rr = Math.max(10, Math.max(g.w, g.h) * t.sc / 2 + 4);
+      if (!g.on || g.type === 'off') continue;
+      for (var i = 0; i < g.pts.length; i++) {
+        var q = trS(g.pts[i]);
+        if (Math.abs(q[0] - s[0]) <= rr && Math.abs(q[1] - s[1]) <= rr) { g.pts.splice(i, 1); if (!g.pts.length) F.groups.splice(j, 1); trMsg(''); traceUI(); drawTrace(); return; }
+      }
+    }
+    F.busy = true; trMsg('Ищем такие же значки…'); cv.style.cursor = 'progress';
+    setTimeout(function () {
+      if (tr !== t) return;
+      var g2 = window.MLPFix.byClick(t.img, trI(s), F.ppm), n = g2 ? fxAdd(t, g2, true) : 0;
+      trMsg(n ? 'Нашли ' + n + ' ' + plural(n, 'такой значок', 'таких значка', 'таких значков') + ' в комнатах. Лишние метки убираются нажатием, тип группы — в списке.'
+        : 'Здесь не нашли значок светильника — нажмите точно на значок (можно приблизить колесом или двумя пальцами).');
+      F.busy = false; cv.style.cursor = 'crosshair'; traceUI(); drawTrace();
+    }, 30);
+  }
+  function fxUI() {
+    var F = tr.fx, N = F.groups.reduce(function (a, g) { return a + (g.on && g.type !== 'off' ? g.pts.length : 0); }, 0);
+    ['mlp-tundo', 'mlp-tredo', 'mlp-treset', 'mlp-tmode', 'mlp-tlenrow'].forEach(function (id) { $(id).hidden = true; }); $('mlp-tortho').parentNode.hidden = true;
+    $('mlp-tstep').innerHTML = '<b>Светильники из проекта.</b> ' + (!F.reg ? 'Совмещаем лист с комнатами…'
+      : 'Зелёные контуры — ваши комнаты. Проверьте метки: лишнюю уберите нажатием на неё; не отмечен какой-то светильник — нажмите на его значок, найдём все такие же. Укажите тип каждой группы и нажмите «Перенести в комнаты».');
+    $('mlp-fxlist').innerHTML = F.groups.map(function (g, i) {
+      return '<div class="fxrow"><span class="sw2" style="border:2.5px solid ' + g.col + '"></span><span>' + g.pts.length + ' шт.</span><select data-fx="' + i + '">' +
+        FIXK.map(function (k) { return '<option value="' + k[0] + '"' + ((g.on ? g.type : 'off') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>';
+    }).join('');
+    $('mlp-tdone').hidden = false; $('mlp-tdone').textContent = 'Перенести в комнаты (' + N + ')'; $('mlp-tdone').disabled = !N || F.busy;
+  }
+  // Перенос: в каждой комнате, где нашлись светильники, группы по типам с местами из проекта (мощность —
+  // как у прежней группы того же типа, если была); в остальных комнатах ничего не меняем
+  function fxApply() {
+    var t = tr, F = t.fx, by = new Map(), n = 0;
+    F.groups.forEach(function (g) {
+      if (!g.on || g.type === 'off') return;
+      g.pts.forEach(function (p) { var w = fxWhere(t, p); if (!w) return; var m = by.get(w.r) || {}; (m[g.type] = m[g.type] || []).push(w.m); by.set(w.r, m); });
+    });
+    by.forEach(function (types, r) {
+      withRoom(r, function () {
+        var old = st.groups.slice(); st.groups = [];
+        ['pendant', 'ceiling', 'spot', 'wall'].forEach(function (k) {
+          if (!types[k]) return;
+          var prev = old.filter(function (o) { return o.type === k; })[0];
+          addGroup(k); var g = st.groups[st.groups.length - 1], poly = makePoly();
+          if (prev) ['mode', 'watts', 'lm', 'lamps', 'eff', 'drop', 'beam', 'mountH'].forEach(function (fl) { g[fl] = prev[fl]; });
+          g.pos = types[k].map(function (p) { var q = [Math.round(p[0] * 100) / 100, Math.round(p[1] * 100) / 100]; return k === 'wall' ? M.snapToWall(poly, q[0], q[1], 0.08) : q; });
+          g.count = g.pos.length; g.fixed = true; g.alt = null; n += g.count;
+          g.note = 'Расставлено по дизайн-проекту. Измените количество или нажмите «Расставить автоматически» — расставим заново.';
+        });
+        relayoutSpots();
+      });
+    });
+    tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default';
+    traceUI(); sideMode();
+    if (rooms.length > 1) openAll(); else { renderGroups(); update(); }
+    var v = $('mlp-verdict'); v.textContent = 'Перенесено ' + n + ' ' + plural(n, 'светильник', 'светильника', 'светильников') + ' из проекта в ' + by.size + ' ' + plural(by.size, 'комнату', 'комнаты', 'комнат') + '. Проверьте мощность в каждой комнате — на плане её нет. ' + v.textContent;
+  }
   cv.addEventListener('wheel', function (e) {
     if (!tr) return; e.preventDefault();
     trZoom(scr(e), Math.exp(-e.deltaY * 0.0015)); drawTrace();
@@ -1225,7 +1366,7 @@
     if (e.target.closest('#mlp-cam')) { refresh3d(true); return; }
     if (e.target.closest('#mlp-rec-go')) { if (recApply) recApply(); return; }
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
-    if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
+    if (e.target.closest('#mlp-auto')) { st.groups.forEach(function (g) { g.fixed = false; g.note = ''; }); relayoutAll(); return; }
     if (e.target.closest('#mlp-undo')) { histGo(true); return; }
     var sp = e.target.closest('[data-spotset]');
     if (sp) { spotDelta(+sp.dataset.spotset - spotTotal()); relayoutSpots(); renderGroups(); update(); return; }
@@ -1239,10 +1380,10 @@
     if (e.target.closest('#mlp-trace')) { $('mlp-file').click(); return; }
     if (e.target.closest('[data-rdel]')) { delRoom(); return; }
     var rt = e.target.closest('[data-rt]');
-    if (rt) { var v2 = rt.dataset.rt; if (v2 === 'all') openAll(); else if (v2 === 'add') addRoom(); else if (rooms[+v2] !== st || all) openRoom(rooms[+v2]); return; }
+    if (rt) { var v2 = rt.dataset.rt; if (v2 === 'all') openAll(); else if (v2 === 'add') addRoom(); else if (v2 === 'fix') startFix(); else if (rooms[+v2] !== st || all) openRoom(rooms[+v2]); return; }
     var ri = e.target.closest('[data-ri]'); if (ri) { openRoom(rooms[+ri.dataset.ri]); return; }
     if (tr) {
-      if (e.target.closest('#mlp-tdone')) { finishTrace(); return; }
+      if (e.target.closest('#mlp-tdone')) { if (tr.fx) fxApply(); else finishTrace(); return; }
       if (e.target.closest('#mlp-tundo')) { tr.h.undo(); return; }
       if (e.target.closest('#mlp-tredo')) { tr.h.redo(); return; }
       if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.typed = false; $('mlp-tlen').value = ''; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
@@ -1259,6 +1400,7 @@
   });
   function onInput(e) {
     var t = e.target, k = t.dataset.k, f = t.dataset.f;
+    if (t.dataset.fx != null) { if (tr && tr.fx) { var fg = tr.fx.groups[+t.dataset.fx]; if (t.value === 'off') fg.on = false; else { fg.on = true; fg.type = t.value; } traceUI(); drawTrace(); } return; }
     if (t.id === 'mlp-iso') { st.iso = t.checked; draw(); return; }
     if (t.id === 'mlp-bgshow') { if (st.bg) st.bg.show = t.checked; draw(); return; }
     if (t.id === 'mlp-tortho') { if (tr) tr.ortho = t.checked; return; }
@@ -1272,12 +1414,12 @@
     }
     if (f) {
       var g = st.groups.filter(function (x) { return x.id === +t.closest('.grp').dataset.g; })[0]; if (!g) return;
-      if (f === 'type') { g.type = t.value; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); g.eff = DEF_LAMP[g.type]; relayout(g); renderGroups(); update(); return; }
+      if (f === 'type') { g.type = t.value; g.fixed = false; var d = DEF[g.type]; ['watts', 'lm', 'lamps', 'drop', 'beam'].forEach(function (p) { g[p] = d[p]; }); g.eff = DEF_LAMP[g.type]; relayout(g); renderGroups(); update(); return; }
       if (f === 'on') { g.on = t.checked; update(); return; }
       if (f === 'mode') { g.mode = t.value; renderGroups(); update(); return; }
       if (f === 'count') {
         var v = Math.max(0, Math.min(60, Math.round(num(t.value))));
-        g.count = v; relayout(g);
+        g.count = v; g.fixed = false; relayout(g);
         if (e.type === 'change') t.value = g.count;
         var nt = t.closest('.grp').querySelector('[data-note]'); if (nt) { nt.textContent = g.note || ''; nt.hidden = !g.note; }
         update(); return;
@@ -1399,5 +1541,5 @@
   st.poly = makePoly(); addGroup('pendant'); addGroup('spot');
   renderDims(); renderGroups(); legend(); update(); renderTabs();
   clearTimeout(hT); histRec(); // исходное состояние — первая точка истории
-  window.MLPlanner = { get state() { return st; }, rooms: function () { return rooms; }, openRoom: function (i) { openRoom(rooms[i]); }, openAll: openAll, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
+  window.MLPlanner = { get state() { return st; }, fixTrace: function (lim) { fixTrace(planImg(), lim); }, rooms: function () { return rooms; }, openRoom: function (i) { openRoom(rooms[i]); }, openAll: openAll, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
 })();

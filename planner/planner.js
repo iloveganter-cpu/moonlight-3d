@@ -460,7 +460,7 @@
       h += '<button type="button" data-rt="' + i + '"' + (on ? ' class="on"' : '') + '><span class="mk ' + markOf(r) + '"></span>' + esc(roomName(r)) +
         (on && rooms.length > 1 ? '<span class="rx" data-rdel title="Удалить комнату">×</span>' : '') + '</button>';
     });
-    h += '<button type="button" class="add" data-rt="add">+ Комната</button>';
+    h += '<button type="button" class="add" data-rt="add">+ Добавить комнату</button>';
     box.innerHTML = h;
   }
   // Новая комната: общие параметры квартиры — как у текущей, тип — первый ещё не занятый

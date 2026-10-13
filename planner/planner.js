@@ -73,6 +73,8 @@
     '.mlp .verdict.good{background:#e8f5e9}.mlp .verdict.warn{background:#fff3e0}.mlp .verdict.bad{background:#ffebee}' +
     '.mlp .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}' +
     '.mlp .note{font-size:12px;color:var(--mute);margin-top:12px}' +
+    '.mlp .tbar{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:14px}.mlp .tbar .tools{margin-top:8px}' +
+    '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
     '@media (max-width:480px){.mlp h2{font-size:23px}.mlp .row.m1{grid-template-columns:minmax(0,1fr)}.mlp .seg button{font-size:11px}.mlp .sum b{font-size:20px}}';
 
@@ -85,6 +87,9 @@
       '<div class="card"><h3>Помещение</h3>' +
         '<div class="seg" id="mlp-shape">' + SHAPES.map(function (s) { return '<button type="button" data-shape="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
         '<div class="row" id="mlp-dims"></div>' +
+        '<div class="tools" style="margin:0 0 4px"><button type="button" class="btn small ghost" id="mlp-trace">Обвести по своему плану</button>' +
+          '<input type="file" id="mlp-file" accept="image/*,.pdf,application/pdf" hidden></div>' +
+        '<div class="hint" style="margin:0 0 12px">Фото или скан плана (БТИ, от застройщика, от дизайнера) — картинка или PDF.</div>' +
         '<div class="row three"><div><label>Потолок, м</label><input data-k="H" type="number" step="0.05" min="1.8"></div>' +
           '<div><label>Рабочая пов., м</label><input data-k="wp" type="number" step="0.05" min="0" max="1.2"></div>' +
           '<div><label>Норма, лк</label><input data-k="E" type="number" step="10" min="10"></div></div>' +
@@ -98,11 +103,21 @@
         '<div><label>Тариф, сом/кВт·ч</label><input data-k="tariff" type="number" step="0.01" min="0"></div></div></div>' +
     '</div><div class="main">' +
       '<div class="plan"><div class="views"><button type="button" data-view="plan" class="on">План</button><button type="button" data-view="3d">3D</button></div>' +
+        '<div class="tbar" id="mlp-tbar" hidden><div id="mlp-tstep"></div><div class="tools">' +
+          '<span class="tlen" id="mlp-tlenrow"><input id="mlp-tlen" type="number" min="0.3" step="0.01" inputmode="decimal" placeholder="Длина"> м</span>' +
+          '<button type="button" class="btn small" id="mlp-tdone">Готово</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-tundo">Отменить точку</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-treset">Заново</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-tquit">Выйти</button>' +
+          '<label><input type="checkbox" id="mlp-tortho" checked> Прямые углы</label></div>' +
+          '<div class="hint">Колесо мыши или два пальца — масштаб, перетаскивание — сдвиг. Точки можно двигать, двойной щелчок — удалить. Файл никуда не отправляется — всё в вашем браузере.</div>' +
+          '<div class="hint note" id="mlp-tmsg" hidden></div></div>' +
         '<canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
         '<div id="mlp-3d" class="v3d" hidden><div class="v3d-msg" id="mlp-3dmsg">Загружаем 3D…</div></div>' +
         '<div class="legend" id="mlp-legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
         '<div class="tools" id="mlp-tools2d"><button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
-          '<label><input type="checkbox" id="mlp-iso" checked> Линии равной освещённости</label></div>' +
+          '<label><input type="checkbox" id="mlp-iso" checked> Линии равной освещённости</label>' +
+          '<label id="mlp-bgrow" hidden><input type="checkbox" id="mlp-bgshow" checked> План-подложка</label></div>' +
         '<div class="tools" id="mlp-tools3d" hidden><div class="seg two"><button type="button" data-m3="real" class="on">Как будет выглядеть</button><button type="button" data-m3="map">Карта люксов</button></div>' +
           '<button type="button" class="btn small ghost" id="mlp-cam">Сбросить вид</button></div>' +
         '<div class="hint" id="mlp-hint2d">Светильники и углы комнаты можно перетаскивать. Чтобы добавить угол — потяните за «+» на стене; убрать — двойной щелчок или двойное касание угла.</div>' +
@@ -244,6 +259,7 @@
     var poly = makePoly();
     res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
     if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
+    $('mlp-bgrow').hidden = !(st.bg && st.shape === 'custom');
     // Предупреждения о том, что не попало в расчёт
     var warn = [], W = 0;
     if (st.H <= st.wp + 0.1) warn.push('Высота потолка меньше рабочей поверхности — проверьте размеры.');
@@ -372,6 +388,7 @@
     $('mlp-ticks').innerHTML = [0, 0.25, 0.5, 0.75, 1].map(function (t) { return '<span>' + fmt(m * t) + (t === 1 ? '+' : '') + (t === 0.5 ? ' (норма)' : '') + '</span>'; }).join('');
   }
   function draw(clean) {
+    if (tr) { drawTrace(); return; }
     var poly = makePoly(), bb = M.bbox(poly), dpr = window.devicePixelRatio || 1;
     var cw = cv.clientWidth || 600, pad = 34;
     var maxH = Math.min(640, (window.innerHeight || 800) * 0.72);
@@ -383,6 +400,12 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, cw, ch);
     function X(x) { return ox + x * sc; } function Y(y) { return oy + y * sc; }
     function path() { ctx.beginPath(); poly.forEach(function (p, i) { i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1])); }); ctx.closePath(); }
+    // подложка — план клиента: метры = поворот(пиксели − p0) · mpp − sh
+    if (st.bg && st.bg.show && st.shape === 'custom') {
+      var B = st.bg; ctx.save(); ctx.globalAlpha = 0.5;
+      ctx.translate(X(-B.sh[0]), Y(-B.sh[1])); ctx.scale(sc * B.mpp, sc * B.mpp); ctx.rotate(-B.ax); ctx.translate(-B.p0[0], -B.p0[1]);
+      ctx.drawImage(B.img, 0, 0); ctx.restore();
+    }
 
     // карта освещённости
     var g = res.grid, off = document.createElement('canvas'); off.width = g.nx; off.height = g.ny;
@@ -453,6 +476,7 @@
   var raf = 0; function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; update(true); }); }
   var lastTap = { t: 0, i: -1 };
   cv.addEventListener('pointerdown', function (e) {
+    if (tr) { trDown(e); return; }
     if (!view) return; var pt = toM(e), h = hit(pt); if (!h) return;
     e.preventDefault(); cv.setPointerCapture(e.pointerId);
     // двойное касание угла на телефоне = удалить угол (dblclick на тачскрине ненадёжен)
@@ -466,6 +490,7 @@
     drag = h; cv.style.cursor = 'grabbing';
   });
   cv.addEventListener('pointermove', function (e) {
+    if (tr) { trMove(e); return; }
     if (!view) return; var pt = toM(e);
     if (!drag) { cv.style.cursor = hit(pt) ? 'grab' : 'default'; return; }
     var x = snap(pt[0]), y = snap(pt[1]), poly = makePoly();
@@ -486,11 +511,249 @@
   }
   function removeVertex(i) { toCustom(); if (st.poly.length > 3) { var prev = st.poly.slice(); st.poly.splice(i, 1); if (!M.isSimple(st.poly)) st.poly = prev; snapWallLums(); update(); } }
   function endDrag() { if (drag) { drag = null; cv.style.cursor = 'default'; update(); } }
-  cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+  cv.addEventListener('pointerup', function (e) { if (tr) trUp(e); else endDrag(); });
+  cv.addEventListener('pointercancel', function (e) { if (tr) trUp(e); else endDrag(); });
   cv.addEventListener('dblclick', function (e) {
+    if (tr) { trDbl(e); return; }
     var h = hit(toM(e)); if (!h || h.kind !== 'vtx') return;
     removeVertex(h.i);
   });
+
+  // ---------- Обводка плана по фото или скану ----------
+  // Клиент загружает план, ставит точки по углам комнаты (в пикселях картинки), затем вводит длину одной стены —
+  // отсюда масштаб. Контур поворачивается так, чтобы стены легли по осям (нужно для симметричной расстановки),
+  // картинка остаётся подложкой на плане.
+  var tr = null, tp = { ptrs: {}, mode: null };
+  var PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+  function fitImage(src, w, h) {
+    var k = Math.min(1, 2400 / Math.max(w, h)), c = document.createElement('canvas'), x = c.getContext('2d');
+    c.width = Math.round(w * k); c.height = Math.round(h * k);
+    x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(src, 0, 0, c.width, c.height);
+    return c;
+  }
+  function loadPlan(file) {
+    if (/pdf$/i.test(file.type) || /\.pdf$/i.test(file.name)) {
+      return (window.pdfjsLib ? Promise.resolve() : load(PDFJS + 'pdf.min.js')).then(function () {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
+        return file.arrayBuffer();
+      }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; })
+        .then(function (doc) { return doc.getPage(1); })
+        .then(function (pg) {
+          var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 2400 / Math.max(v1.width, v1.height) });
+          var c = document.createElement('canvas'), x = c.getContext('2d');
+          c.width = Math.round(vp.width); c.height = Math.round(vp.height); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+          return pg.render({ canvasContext: x, viewport: vp }).promise.then(function () { return c; });
+        });
+    }
+    return new Promise(function (ok, no) {
+      var url = URL.createObjectURL(file), im = new Image();
+      im.onload = function () { URL.revokeObjectURL(url); ok(fitImage(im, im.naturalWidth, im.naturalHeight)); };
+      im.onerror = function () { URL.revokeObjectURL(url); no(); };
+      im.src = url;
+    });
+  }
+  function startTrace(img) {
+    if (view3d) setView('plan');
+    tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0 };
+    $('mlp-tlen').value = ''; $('mlp-tmsg').hidden = true;
+    traceUI(); drawTrace();
+    root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function endTrace() { tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default'; traceUI(); update(); }
+  function fitTrace() {
+    var cw = cv.clientWidth || 600, maxH = Math.min(640, (window.innerHeight || 800) * 0.72), pad = 10, iw = tr.img.width, ih = tr.img.height;
+    var sc = Math.min((cw - 2 * pad) / iw, (maxH - 2 * pad) / ih);
+    tr.cw = cw; tr.ch = Math.max(320, Math.round(ih * sc + 2 * pad)); tr.fit = tr.sc = sc;
+    tr.ox = (cw - iw * sc) / 2; tr.oy = (tr.ch - ih * sc) / 2;
+  }
+  function trS(p) { return [tr.ox + p[0] * tr.sc, tr.oy + p[1] * tr.sc]; }  // картинка → экран
+  function trI(s) { return [(s[0] - tr.ox) / tr.sc, (s[1] - tr.oy) / tr.sc]; } // экран → картинка
+  function scr(e) { var r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+  function rot(p, a) { var c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[1] * s, -p[0] * s + p[1] * c]; } // в оси плана
+  function unrot(p, a) { var c = Math.cos(a), s = Math.sin(a); return [p[0] * c - p[1] * s, p[0] * s + p[1] * c]; }
+  var TOL = 8 * Math.PI / 180;
+  // Оси плана задаёт первая стена (фото может быть чуть повёрнуто) — угол в пределах ±45°
+  function axisOf(d) {
+    var q = Math.PI / 2, m = ((Math.atan2(d[1], d[0]) % q) + q) % q;
+    return m > q / 2 ? m - q : m;
+  }
+  // Прилипание: стена вдоль осей плана + угол на одной линии с уже поставленными
+  function trSnap(q) {
+    var n = tr.pts.length; if (!tr.ortho || !n) return q;
+    var prev = tr.pts[n - 1], d = [q[0] - prev[0], q[1] - prev[1]], L = Math.hypot(d[0], d[1]); if (L < 1e-6) return q;
+    var ax = tr.axis != null ? tr.axis : axisOf(d), u = rot(d, ax), lim = Math.sin(TOL), hz = false, vt = false;
+    if (Math.abs(u[1]) / L < lim) { u[1] = 0; hz = true; } else if (Math.abs(u[0]) / L < lim) { u[0] = 0; vt = true; }
+    if (!hz && !vt) return q;
+    var P = rot(prev, ax), R = [P[0] + u[0], P[1] + u[1]], tol = 10 / tr.sc;
+    for (var i = 0; i < n - 1; i++) {
+      var A = rot(tr.pts[i], ax);
+      if (hz && Math.abs(R[0] - A[0]) < tol) { R[0] = A[0]; break; }
+      if (vt && Math.abs(R[1] - A[1]) < tol) { R[1] = A[1]; break; }
+    }
+    return unrot(R, ax);
+  }
+  function trHitPt(s) {
+    var best = -1, bd = 14;
+    tr.pts.forEach(function (p, i) { var q = trS(p), d = Math.hypot(q[0] - s[0], q[1] - s[1]); if (d < bd) { bd = d; best = i; } });
+    return best;
+  }
+  function trHitWall(s) {
+    var n = tr.pts.length, best = -1, bd = 14;
+    for (var i = 0; i < n; i++) {
+      var a = trS(tr.pts[i]), b = trS(tr.pts[(i + 1) % n]), dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1;
+      var t = Math.max(0, Math.min(1, ((s[0] - a[0]) * dx + (s[1] - a[1]) * dy) / L2)), d = Math.hypot(a[0] + t * dx - s[0], a[1] + t * dy - s[1]);
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  function wallPx(i) { var n = tr.pts.length, a = tr.pts[i], b = tr.pts[(i + 1) % n]; return Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  function trMpp() { var L = num($('mlp-tlen').value); return tr.closed && tr.sel >= 0 && L > 0 ? L / wallPx(tr.sel) : 0; }
+  function trMsg(t) { $('mlp-tmsg').textContent = t || ''; $('mlp-tmsg').hidden = !t; }
+  function trZoom(s, k) {
+    var nsc = Math.max(tr.fit * 0.5, Math.min(tr.fit * 12, tr.sc * k)), p = trI(s);
+    tr.sc = nsc; tr.ox = s[0] - p[0] * nsc; tr.oy = s[1] - p[1] * nsc;
+  }
+  function drawTrace() {
+    if ((cv.clientWidth || 600) !== tr.cw) fitTrace();
+    var dpr = window.devicePixelRatio || 1, cw = tr.cw, ch = tr.ch, P = tr.pts.map(trS), n = P.length;
+    cv.style.height = ch + 'px'; cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.fillStyle = '#f4f4f4'; ctx.fillRect(0, 0, cw, ch);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(tr.img, tr.ox, tr.oy, tr.img.width * tr.sc, tr.img.height * tr.sc);
+    if (!n) return;
+    ctx.beginPath(); P.forEach(function (p, i) { i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+    if (tr.closed) { ctx.closePath(); ctx.fillStyle = 'rgba(229,57,53,.12)'; ctx.fill(); }
+    ctx.strokeStyle = '#e53935'; ctx.lineWidth = 2; ctx.stroke();
+    if (!tr.closed && tr.hov) {
+      var h = trS(tr.hov); ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(P[n - 1][0], P[n - 1][1]); ctx.lineTo(h[0], h[1]); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(h[0], h[1], 4, 0, 7); ctx.fillStyle = '#e53935'; ctx.fill();
+    }
+    if (tr.closed && tr.sel >= 0) {
+      var a = P[tr.sel], b = P[(tr.sel + 1) % n]; ctx.strokeStyle = '#1565c0'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+    }
+    var mpp = trMpp();
+    if (mpp) {
+      ctx.font = '600 12px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+      P.forEach(function (p, i) {
+        var q = P[(i + 1) % n], t = fmt(wallPx(i) * mpp, 2) + ' м';
+        ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.strokeText(t, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+        ctx.fillStyle = i === tr.sel ? '#1565c0' : '#000'; ctx.fillText(t, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+      });
+    }
+    P.forEach(function (p, i) {
+      var r = i === 0 && !tr.closed && n >= 3 ? 7 : 5;
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#e53935'; ctx.lineWidth = 2; ctx.fillRect(p[0] - r, p[1] - r, 2 * r, 2 * r); ctx.strokeRect(p[0] - r, p[1] - r, 2 * r, 2 * r);
+    });
+  }
+  function traceUI() {
+    var on = !!tr;
+    $('mlp-tbar').hidden = !on;
+    root.querySelector('.views').hidden = on; $('mlp-tools2d').hidden = on; $('mlp-hint2d').hidden = on;
+    $('mlp-legend').hidden = on || (view3d && mode3d === 'real');
+    $('mlp-trace').textContent = st.bg ? 'Загрузить другой план' : 'Обвести по своему плану';
+    if (!on) return;
+    $('mlp-tstep').innerHTML = tr.closed
+      ? '<b>Шаг 2 из 2.</b> Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
+      : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.';
+    $('mlp-tlenrow').hidden = $('mlp-tdone').hidden = !tr.closed;
+    $('mlp-tdone').disabled = !trMpp();
+    $('mlp-tundo').disabled = !tr.pts.length;
+  }
+  function trDown(e) {
+    e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+    var s = scr(e); tp.ptrs[e.pointerId] = s;
+    var ids = Object.keys(tp.ptrs);
+    if (ids.length === 2) {
+      var a = tp.ptrs[ids[0]], b = tp.ptrs[ids[1]];
+      tp.mode = 'pinch'; tp.d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1; tp.sc = tr.sc;
+      tp.m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; tp.anchor = trI(tp.m);
+      return;
+    }
+    if (ids.length > 2) return;
+    tp.mode = 'tap'; tp.start = s; tp.idx = trHitPt(s); tp.o = [tr.ox, tr.oy];
+  }
+  function trMove(e) {
+    var s = scr(e);
+    if (tp.ptrs[e.pointerId]) tp.ptrs[e.pointerId] = s;
+    if (tp.mode === 'pinch') {
+      var ids = Object.keys(tp.ptrs); if (ids.length < 2) return;
+      var a = tp.ptrs[ids[0]], b = tp.ptrs[ids[1]], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      tr.sc = Math.max(tr.fit * 0.5, Math.min(tr.fit * 12, tp.sc * Math.hypot(a[0] - b[0], a[1] - b[1]) / tp.d));
+      tr.ox = m[0] - tp.anchor[0] * tr.sc; tr.oy = m[1] - tp.anchor[1] * tr.sc;
+      drawTrace(); return;
+    }
+    if (tp.mode) {
+      if (tp.mode === 'tap' && Math.hypot(s[0] - tp.start[0], s[1] - tp.start[1]) > 6) tp.mode = tp.idx >= 0 ? 'drag' : 'pan';
+      if (tp.mode === 'drag') { tr.pts[tp.idx] = trI(s); drawTrace(); }
+      else if (tp.mode === 'pan') { tr.ox = tp.o[0] + s[0] - tp.start[0]; tr.oy = tp.o[1] + s[1] - tp.start[1]; drawTrace(); }
+      return;
+    }
+    var over = trHitPt(s) >= 0 || (tr.closed && trHitWall(s) >= 0);
+    cv.style.cursor = over ? 'pointer' : 'crosshair';
+    if (!tr.closed && tr.pts.length && e.pointerType === 'mouse') { tr.hov = trSnap(trI(s)); drawTrace(); }
+  }
+  function trUp(e) {
+    delete tp.ptrs[e.pointerId];
+    var mode = tp.mode;
+    if (mode === 'pinch') { if (!Object.keys(tp.ptrs).length) tp.mode = null; return; } // оставшийся палец точку не ставит
+    tp.mode = null;
+    if (mode === 'tap' && e.type === 'pointerup') trTap(tp.start, tp.idx);
+    if (mode === 'drag' && tr.closed && !M.isSimple(tr.pts)) trMsg('Стены пересекаются — передвиньте точку.');
+    drawTrace(); traceUI();
+  }
+  function trTap(s, idx) {
+    trMsg('');
+    if (tr.closed) {
+      var w = trHitWall(s); if (w < 0) return;
+      tr.sel = w; $('mlp-tlen').focus(); return;
+    }
+    if (idx === 0 && tr.pts.length >= 3) {
+      if (!M.isSimple(tr.pts)) { trMsg('Стены пересекаются — передвиньте точки или отмените последнюю.'); return; }
+      tr.closed = true; tr.hov = null;
+      tr.sel = 0; for (var i = 1; i < tr.pts.length; i++) if (wallPx(i) > wallPx(tr.sel)) tr.sel = i; // по умолчанию — самая длинная стена
+      setTimeout(function () { $('mlp-tlen').focus(); }, 0);
+      return;
+    }
+    if (idx >= 0) return;
+    tr.pts.push(trSnap(trI(s)));
+    if (tr.pts.length === 2) { var a = tr.pts[0], b = tr.pts[1]; tr.axis = axisOf([b[0] - a[0], b[1] - a[1]]); }
+  }
+  function trDbl(e) {
+    var i = trHitPt(scr(e)); if (i < 0 || (tr.closed && tr.pts.length <= 3)) return;
+    tr.pts.splice(i, 1); if (tr.pts.length < 2) tr.axis = null;
+    if (tr.sel >= tr.pts.length) tr.sel = 0;
+    drawTrace(); traceUI();
+  }
+  function trUndo() {
+    if (tr.closed) { tr.closed = false; tr.sel = -1; }
+    else { tr.pts.pop(); if (tr.pts.length < 2) tr.axis = null; }
+    trMsg(''); drawTrace(); traceUI();
+  }
+  function finishTrace() {
+    var mpp = trMpp(); if (!mpp) return;
+    var ax = tr.axis || 0, p0 = tr.pts[0];
+    var poly = tr.pts.map(function (p) { var r = rot([p[0] - p0[0], p[1] - p0[1]], ax); return [r[0] * mpp, r[1] * mpp]; });
+    var bb = M.bbox(poly);
+    poly = poly.map(function (p) { return [Math.round((p[0] - bb.x0) * 100) / 100, Math.round((p[1] - bb.y0) * 100) / 100]; });
+    if (!M.isSimple(poly)) { trMsg('Контур пересекает сам себя или слишком маленький — поправьте точки.'); return; }
+    if (bb.w > 60 || bb.h > 60) { trMsg('Комната получается больше 60 м — проверьте длину стены.'); return; }
+    st.bg = { img: tr.img, mpp: mpp, ax: ax, p0: p0, sh: [bb.x0, bb.y0], show: true };
+    $('mlp-bgshow').checked = true;
+    st.shape = 'custom'; st.poly = poly;
+    tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default';
+    traceUI(); renderDims(); relayoutAll();
+  }
+  cv.addEventListener('wheel', function (e) {
+    if (!tr) return; e.preventDefault();
+    trZoom(scr(e), Math.exp(-e.deltaY * 0.0015)); drawTrace();
+  }, { passive: false });
+  $('mlp-file').addEventListener('change', function () {
+    var f = this.files && this.files[0], inp = this, btn = $('mlp-trace'); if (!f) return;
+    btn.disabled = true; btn.textContent = 'Открываем план…';
+    loadPlan(f).then(startTrace, function () { alert('Не удалось открыть файл. Подойдёт фото или скан плана (JPG, PNG) или PDF.'); })
+      .then(function () { btn.disabled = false; inp.value = ''; traceUI(); });
+  });
+  $('mlp-tlen').addEventListener('keydown', function (e) { if (e.key === 'Enter') finishTrace(); });
 
   // ---------- Ввод ----------
   root.addEventListener('click', function (e) {
@@ -502,12 +765,23 @@
     if (e.target.closest('#mlp-rec-go')) { if (recApply) recApply(); return; }
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
+    if (e.target.closest('#mlp-trace')) { $('mlp-file').click(); return; }
+    if (tr) {
+      if (e.target.closest('#mlp-tdone')) { finishTrace(); return; }
+      if (e.target.closest('#mlp-tundo')) { trUndo(); return; }
+      if (e.target.closest('#mlp-treset')) { startTrace(tr.img); return; }
+      if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
+    }
     var del = e.target.closest('[data-del]');
     if (del) { var id = +del.closest('.grp').dataset.g; st.groups = st.groups.filter(function (g) { return g.id !== id; }); renderGroups(); update(); }
   });
   function onInput(e) {
     var t = e.target, k = t.dataset.k, f = t.dataset.f;
     if (t.id === 'mlp-iso') { st.iso = t.checked; draw(); return; }
+    if (t.id === 'mlp-bgshow') { if (st.bg) st.bg.show = t.checked; draw(); return; }
+    if (t.id === 'mlp-tortho') { if (tr) tr.ortho = t.checked; return; }
+    if (t.id === 'mlp-tlen') { if (tr) { drawTrace(); traceUI(); } return; }
+    if (t.id === 'mlp-file') return;
     if (k) {
       if (k === 'room') { st.room = +t.value; var n = ROOMS[st.room][1]; if (n) { st.E = n; root.querySelector('[data-k="E"]').value = n; } }
       else if (k === 'refl' || k === 'kz') st[k] = +t.value;
@@ -608,5 +882,5 @@
 
   st.poly = makePoly(); addGroup('pendant'); addGroup('spot');
   renderDims(); renderGroups(); legend(); update();
-  window.MLPlanner = { state: st, update: update, result: function () { return res; } }; // для отладки
+  window.MLPlanner = { state: st, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
 })();

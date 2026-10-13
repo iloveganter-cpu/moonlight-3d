@@ -905,16 +905,24 @@
   });
 
   // ---------- Шапка Тильды и старт ----------
+  // Закреплённая шапка сайта на этой странице не нужна: перекрывает план и прыгает при прокрутке.
+  // Делаем её обычной — стоит наверху страницы и уезжает вместе с ней; планировщик сдвигаем под неё.
+  var unfixed = [];
   function fitHeader() {
-    var bottom = 0;
     document.querySelectorAll('body *').forEach(function (e) {
-      if (root.contains(e)) return;
+      if (root.contains(e) || unfixed.indexOf(e) >= 0) return;
       var s = getComputedStyle(e); if (s.position !== 'fixed' || s.display === 'none' || s.visibility === 'hidden') return;
       var r = e.getBoundingClientRect();
-      if (r.top <= 1 && r.bottom > 0 && r.height < 300 && r.width > innerWidth * 0.6) bottom = Math.max(bottom, r.bottom);
+      if (r.top <= 1 && r.bottom > 0 && r.height < 300 && r.width > innerWidth * 0.6) unfixed.push(e);
+    });
+    var bottom = 0, y = window.pageYOffset || 0;
+    unfixed.forEach(function (e) {
+      e.style.setProperty('position', 'absolute', 'important'); e.style.setProperty('top', '0', 'important');
+      e.style.setProperty('transform', 'none', 'important'); e.style.setProperty('transition', 'none', 'important');
+      if (getComputedStyle(e).display !== 'none') bottom = Math.max(bottom, e.getBoundingClientRect().bottom + y);
     });
     root.style.marginTop = '0px';
-    var top = root.getBoundingClientRect().top + (window.pageYOffset || 0);
+    var top = root.getBoundingClientRect().top + y;
     root.style.marginTop = Math.max(0, Math.ceil(bottom - top)) + 'px';
   }
   if (document.readyState === 'complete') fitHeader(); else window.addEventListener('load', fitHeader);

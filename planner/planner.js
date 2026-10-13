@@ -198,17 +198,94 @@
   function lumZ(g) { return M.TYPES[g.type].mount === 'wall' ? Math.min(g.mountH, st.H - 0.05) : st.H - g.drop; }
   function colorOf(g) { return COLORS[(st.groups.indexOf(g)) % COLORS.length]; }
   function letterOf(g) { return String.fromCharCode(65 + st.groups.indexOf(g)); }
-  // Люстры и плафоны — основной свет, встают по центру сами по себе; споты обходят уже стоящие потолочные светильники
+  // Люстры и плафоны — основной свет, встают по центру сами по себе; споты обходят люстры и плафоны
   function isMain(g) { return g.type === 'pendant' || g.type === 'ceiling'; }
-  function fixedFor(g) {
-    var fixed = [];
-    if (!isMain(g)) st.groups.forEach(function (o) { if (o !== g && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
-    return fixed;
+  function isSpot(g) { return !isMain(g) && M.TYPES[g.type].mount !== 'wall'; }
+  function spotGroups() { return st.groups.filter(isSpot); }
+  function spotTotal() { return spotGroups().reduce(function (s, g) { return s + g.count; }, 0); }
+  function mainFixed() { var f = []; st.groups.forEach(function (o) { if (isMain(o)) f = f.concat(o.pos); }); return f; }
+  function fixedFor(g) { return isMain(g) ? [] : mainFixed(); }
+
+  // Все группы спотов — одна общая сетка (иначе каждая группа обходит соседей и выходит каша).
+  // Места делим на пары, симметричные относительно центра своей зоны комнаты, и раздаём группам парами
+  // от центра к краям — каждая группа стоит симметрично, разные мощности распределены по комнате равномерно.
+  // Симметрия: 0 — центральная (лучше баланс мощностей), 1 — зеркало слева-направо, 2 — сверху-вниз
+  // (нужны для нечётных групп: 3 + 3 = верхний ряд и нижний ряд).
+  function zoneCenter(poly) {
+    var zs = M.zones(poly) || [], bb = M.bbox(poly);
+    return function (p) {
+      for (var i = 0; i < zs.length; i++) { var z = zs[i]; if (p[0] > z.x0 - 1e-6 && p[0] < z.x1 + 1e-6 && p[1] > z.y0 - 1e-6 && p[1] < z.y1 + 1e-6) return [(z.x0 + z.x1) / 2, (z.y0 + z.y1) / 2]; }
+      return [(bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2];
+    };
+  }
+  function mirror(p, c, mode) { return [mode === 2 ? p[0] : 2 * c[0] - p[0], mode === 1 ? p[1] : 2 * c[1] - p[1]]; }
+  function pairUp(pts, poly, mode) {
+    var centerOf = zoneCenter(poly), left = pts.map(function (p) { return p.slice(); }), units = [];
+    while (left.length) {
+      var p = left.shift(), c = centerOf(p), m = mirror(p, c, mode), d = Math.hypot(p[0] - c[0], p[1] - c[1]), bi = -1, bd = 0.25;
+      if (Math.hypot(m[0] - p[0], m[1] - p[1]) > 0.05) left.forEach(function (q, i) { var e = Math.hypot(q[0] - m[0], q[1] - m[1]); if (e < bd) { bd = e; bi = i; } });
+      units.push({ pts: bi >= 0 ? [p, left.splice(bi, 1)[0]] : [p], d: d });
+    }
+    return units.sort(function (a, b) { return a.d - b.d; });
+  }
+  // группа симметрична, если при какой-то из трёх симметрий переходит сама в себя
+  function symmetric(set, centerOf) {
+    return [0, 1, 2].some(function (mode) {
+      return set.every(function (p) { var m = mirror(p, centerOf(p), mode); return set.some(function (q) { return Math.hypot(q[0] - m[0], q[1] - m[1]) < 0.25; }); });
+    });
+  }
+  function assign(units, counts) {
+    return counts.map(function (need) {
+      var out = [];
+      while (need > 0 && units.length) {
+        var k = -1;
+        for (var i = 0; i < units.length && k < 0; i++) if (units[i].pts.length === (need >= 2 ? 2 : 1)) k = i;
+        if (k < 0) k = 0;
+        var u = units[k];
+        if (u.pts.length > need) { out.push(u.pts.shift()); need--; } // нечётный остаток — берём одну точку из пары
+        else { units.splice(k, 1); out = out.concat(u.pts); need -= u.pts.length; }
+      }
+      return out;
+    });
+  }
+  // counts — количество по группам; pts — готовые места (для рекомендации), иначе считаем сами.
+  // Возвращает места по группам и, если общее число симметрично не встаёт, варианты для плашки.
+  function spotPlan(counts, pts) {
+    var poly = makePoly(), fixed = mainFixed(), N = counts.reduce(function (a, b) { return a + b; }, 0), alt = null, note = '';
+    if (!N) return { pos: counts.map(function () { return []; }), alt: null, note: '' };
+    if (!pts) {
+      var sym = M.symLayout(poly, N, { fixed: fixed });
+      if (sym && sym.n === N) pts = sym.pts;
+      else {
+        pts = M.layout(poly, N, 'ceiling', { fixed: fixed, exact: true });
+        if (sym) {
+          var opts = sym.options || [], other = sym.n > N ? opts.filter(function (k) { return k < N; }).pop() : opts.filter(function (k) { return k > N; })[0];
+          alt = { n: N, best: sym.n, other: other || 0 }; note = 'Расставлено равномерно, без строгой симметрии — рекомендация вверху.';
+        } else note = 'Стены не под прямым углом — расставлено равномерно по площади.';
+      }
+    }
+    // из трёх способов деления — тот, где симметричных групп больше (при равенстве — центральная симметрия)
+    var centerOf = zoneCenter(poly), best = null, bestScore = -1;
+    [0, 1, 2].forEach(function (mode) {
+      var pos = assign(pairUp(pts, poly, mode), counts), score = pos.filter(function (set) { return set.length && symmetric(set, centerOf); }).length;
+      if (score > bestScore) { best = pos; bestScore = score; }
+    });
+    return { pos: best, alt: alt, note: note };
+  }
+  function relayoutSpots() {
+    var gs = spotGroups();
+    gs.forEach(function (g) { g.count = Math.max(0, Math.round(g.count)); });
+    var r = spotPlan(gs.map(function (g) { return g.count; }));
+    gs.forEach(function (g, i) { g.pos = r.pos[i]; g.note = g.count ? r.note : ''; g.alt = null; });
+    st.spotAlt = r.alt;
   }
   // Симметричная схема по зонам комнаты. Если ровно столько светильников симметрично не встаёт — количество
   // клиента не меняем: расставляем его равномерно по площади, а над планировщиком показываем рекомендацию
   // (ближайшее симметричное число и соседнее с другой стороны) с кнопками «Поставить N».
-  function relayout(g) {
+  // люстра или плафон сдвинулись — споты перестраиваются вокруг них
+  function relayout(g) { if (!isSpot(g)) relayoutOne(g); if (!isWallG(g)) relayoutSpots(); }
+  function isWallG(g) { return M.TYPES[g.type].mount === 'wall'; }
+  function relayoutOne(g) {
     var n = Math.max(0, Math.round(g.count)), poly = makePoly(); g.note = ''; g.alt = null;
     if (M.TYPES[g.type].mount === 'wall' || n === 0) { g.pos = M.layout(poly, n, M.TYPES[g.type].mount); return; }
     var sym = M.symLayout(poly, n, { fixed: fixedFor(g) });
@@ -223,16 +300,36 @@
   }
   // Плашка над планировщиком: какие группы не встают симметрично и сколько поставить
   function symBanner() {
-    var box = $('mlp-symrec'), rows = st.groups.filter(function (g) { return g.alt && g.alt.n === g.count && g.pos.length; }).map(function (g) {
-      var a = g.alt, name = M.TYPES[g.type].name.toLowerCase(), btn = function (k) { return '<button type="button" class="btn small" data-symset="' + g.id + ':' + k + '">Поставить ' + k + '</button>'; };
-      return '<div><span><b>Группа ' + letterOf(g) + ' (' + esc(name) + '):</b> ' + a.n + ' шт. не встают симметрично — сейчас расставлены равномерно. ' +
-        'Для ровной симметричной схемы рекомендуем <b>' + a.best + '</b>' + (a.other ? ' или ' + a.other : '') + '.</span>' + btn(a.best) + (a.other ? btn(a.other).replace('btn small', 'btn small ghost') : '') + '</div>';
+    var box = $('mlp-symrec'), row = function (title, a, btn) {
+      return '<div><span><b>' + title + ':</b> ' + a.n + ' шт. не встают симметрично — сейчас расставлены равномерно. ' +
+        'Для ровной симметричной схемы рекомендуем <b>' + a.best + '</b>' + (a.other ? ' или ' + a.other : '') + '.</span>' + btn(a.best, 'btn small') + (a.other ? btn(a.other, 'btn small ghost') : '') + '</div>';
+    };
+    var rows = st.groups.filter(function (g) { return g.alt && g.alt.n === g.count && g.pos.length; }).map(function (g) {
+      return row('Группа ' + letterOf(g) + ' (' + esc(M.TYPES[g.type].name.toLowerCase()) + ')', g.alt,
+        function (k, cls) { return '<button type="button" class="' + cls + '" data-symset="' + g.id + ':' + k + '">Поставить ' + k + '</button>'; });
     });
+    var gs = spotGroups(), a = st.spotAlt, N = spotTotal();
+    if (a && a.n === N && N) {
+      var last = gs[gs.length - 1];
+      rows.push(row(gs.length > 1 ? 'Споты и треки (группы ' + gs.map(letterOf).join(', ') + '), всего' : 'Группа ' + letterOf(last) + ' (' + esc(M.TYPES[last.type].name.toLowerCase()) + ')', a,
+        function (k, cls) { return '<button type="button" class="' + cls + '" data-spotset="' + k + '">Поставить ' + k + (gs.length > 1 ? ' (' + spotDeltaText(k - N) + ')' : '') + '</button>'; }));
+    }
     box.innerHTML = rows.join(''); box.hidden = !rows.length;
+  }
+  // Изменение общего числа спотов: добавляем в последнюю группу, убираем — с последних групп
+  function spotDelta(d) {
+    var gs = spotGroups();
+    if (d > 0) gs[gs.length - 1].count += d;
+    for (var i = gs.length - 1; i >= 0 && d < 0; i--) { var k = Math.min(gs[i].count, -d); gs[i].count -= k; d += k; }
+  }
+  function spotDeltaText(d) {
+    var gs = spotGroups(), last = gs[gs.length - 1];
+    return d > 0 ? '+' + d + ' в группу ' + letterOf(last) : '−' + (-d) + (last.count >= -d ? ' из группы ' + letterOf(last) : ' с последних групп');
   }
   function relayoutAll() {
     st.groups.forEach(function (g) { g.pos = []; });
-    st.groups.filter(isMain).concat(st.groups.filter(function (g) { return !isMain(g); })).forEach(relayout);
+    st.groups.filter(function (g) { return !isSpot(g); }).forEach(relayoutOne);
+    relayoutSpots();
     renderGroups(); // количество могло подстроиться под симметрию — обновляем поля и заметки
     update();
   }
@@ -354,36 +451,40 @@
     if (!res || drag) return;
     if (res.active && res.avg >= st.E * 0.9 && res.u0 >= 0.4) return;
     var poly = makePoly(), room = { poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] };
-    var tg = st.groups.filter(function (g) { return g.on !== false && !isMain(g) && M.TYPES[g.type].mount !== 'wall'; }).pop(), isNew = !tg;
-    if (isNew) { tg = { id: -1, type: 'spot', pos: [], eff: 0, on: true }; for (var k in DEF.spot) tg[k] = DEF.spot[k]; }
-    var fixed = []; st.groups.forEach(function (o) { if (o !== tg && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
-    var cur = tg.pos.length, opts = M.symOptions(poly, fixed), cands;
+    // Все споты считаются одной сеткой: перебираем общее количество, добавку отдаём последней включённой группе
+    var gs = spotGroups(), tg = gs.filter(function (g) { return g.on !== false; }).pop() || gs[gs.length - 1], isNew = !tg;
+    if (isNew) { tg = { id: -1, type: 'spot', pos: [], eff: 0, on: true }; for (var k in DEF.spot) tg[k] = DEF.spot[k]; gs = [tg]; tg.count = 0; }
+    var counts = gs.map(function (g) { return g.count; }), cur = counts.reduce(function (a, b) { return a + b; }, 0), ti = gs.indexOf(tg);
+    var opts = M.symOptions(poly, mainFixed()), cands;
     if (opts) {
       var neat = opts.filter(function (o) { return o.neat && o.n > cur; }), rest = opts.filter(function (o) { return !o.neat && o.n > cur; });
       cands = neat.slice(0, 12).concat(rest.slice(0, 8));
     } else {
-      cands = []; for (var n = cur + 1; n <= cur + 12; n++) cands.push({ n: n, pts: M.layout(poly, n, 'ceiling', { fixed: fixed }) });
+      cands = []; for (var n = cur + 1; n <= cur + 12; n++) cands.push({ n: n, pts: M.layout(poly, n, 'ceiling', { fixed: mainFixed(), exact: true }) });
     }
-    var others = lumsAll().filter(function (l) { return l.g !== tg; }), found = null, last = null;
+    var others = lumsAll().filter(function (l) { return !isSpot(l.g); }), found = null, last = null;
     for (var i = 0; i < cands.length && !found; i++) {
-      var c = cands[i], test = others.concat(c.pts.map(function (p) { return { x: p[0], y: p[1], z: lumZ(tg), flux: lumFlux(tg), type: tg.type, beam: tg.beam }; }));
+      var c = cands[i], cc = counts.slice(); cc[ti] += c.n - cur;
+      var plan = spotPlan(cc, c.pts), test = others.slice();
+      gs.forEach(function (g, j) { if (g.on !== false) plan.pos[j].forEach(function (p) { test.push({ x: p[0], y: p[1], z: lumZ(g), flux: lumFlux(g), type: g.type, beam: g.beam }); }); });
       var r = M.compute(room, test, { fast: true }); last = { c: c, r: r };
       if (r.avg >= st.E && r.u0 >= 0.4) { r = M.compute(room, test); last = { c: c, r: r }; if (r.avg >= st.E && r.u0 >= 0.4) found = last; } // перепроверка точным расчётом
     }
     var name = M.TYPES[tg.type].name.toLowerCase(), txt, btn = '';
     if (found) {
-      var N = found.c.n, sym = found.c;
-      txt = (isNew ? 'Добавьте ' + N + ' ' + plural(N, 'спот', 'спота', 'спотов') + ' (' + fmt(lumWatts(tg), 1) + ' Вт)' : 'Поставьте ' + N + ' вместо ' + cur + ' в группе ' + letterOf(tg) + ' (' + name + ')') +
+      var N = found.c.n, sym = found.c, d = N - cur;
+      txt = (isNew ? 'Добавьте ' + N + ' ' + plural(N, 'спот', 'спота', 'спотов') + ' (' + fmt(lumWatts(tg), 1) + ' Вт)'
+        : gs.length > 1 ? 'Поставьте всего ' + N + ' спотов вместо ' + cur + ' (+' + d + ' в группу ' + letterOf(tg) + ')'
+        : 'Поставьте ' + N + ' вместо ' + cur + ' в группе ' + letterOf(tg) + ' (' + name + ')') +
         (sym.cfg ? ', ' + cfgText(sym) : '') + ' — будет в среднем ' + fmt(found.r.avg) + ' лк, минимум ' + fmt(found.r.min) + ' лк, равномерность ' + fmt(found.r.u0, 2) + '.';
       btn = '<button type="button" class="btn small" id="mlp-rec-go">Применить</button>';
       recApply = function () {
-        var g = tg;
-        if (isNew) { addGroup('spot'); g = st.groups[st.groups.length - 1]; }
-        g.count = N; g.pos = found.c.pts.map(function (p) { return p.slice(); }); g.note = ''; g.alt = null;
-        renderGroups(); update();
+        if (isNew) { addGroup('spot'); st.groups[st.groups.length - 1].count = N; }
+        else tg.count += d;
+        relayoutSpots(); renderGroups(); update();
       };
     } else if (last && last.r.avg < st.E) {
-      txt = 'Даже ' + last.c.n + ' светильников группы ' + (isNew ? 'споты' : letterOf(tg)) + ' не дотягивают до нормы — выберите модели мощнее (нужно примерно в ' + fmt(st.E / Math.max(1, last.r.avg) * 1.05, 1) + ' раза больше света).';
+      txt = 'Даже ' + last.c.n + ' ' + plural(last.c.n, 'спот', 'спота', 'спотов') + ' не дотягивают до нормы — выберите модели мощнее (нужно примерно в ' + fmt(st.E / Math.max(1, last.r.avg) * 1.05, 1) + ' раза больше света).';
     } else return;
     box.innerHTML = '<span><b>Рекомендация:</b> ' + esc(txt) + '</span>' + btn; box.hidden = false;
   }
@@ -812,6 +913,8 @@
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
     if (e.target.closest('#mlp-undo')) { histGo(true); return; }
+    var sp = e.target.closest('[data-spotset]');
+    if (sp) { spotDelta(+sp.dataset.spotset - spotTotal()); relayoutSpots(); renderGroups(); update(); return; }
     var sb = e.target.closest('[data-symset]');
     if (sb) {
       var v = sb.dataset.symset.split(':'), sg = st.groups.filter(function (x) { return x.id === +v[0]; })[0];
@@ -828,7 +931,12 @@
       if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
     }
     var del = e.target.closest('[data-del]');
-    if (del) { var id = +del.closest('.grp').dataset.g; st.groups = st.groups.filter(function (g) { return g.id !== id; }); renderGroups(); update(); }
+    if (del) {
+      var id = +del.closest('.grp').dataset.g, dg = st.groups.filter(function (g) { return g.id === id; })[0];
+      st.groups = st.groups.filter(function (g) { return g.id !== id; });
+      if (dg && !isWallG(dg)) relayoutSpots(); // остальные споты занимают освободившиеся места
+      renderGroups(); update();
+    }
   });
   function onInput(e) {
     var t = e.target, k = t.dataset.k, f = t.dataset.f;

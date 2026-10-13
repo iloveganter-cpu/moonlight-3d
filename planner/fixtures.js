@@ -74,17 +74,22 @@
     var hist = new Int32Array(256), paper = 255, cnt = 0;
     for (i = 0; i < N; i++) { var gg = (d[4 * i] + d[4 * i + 1] + d[4 * i + 2]) / 3; g[i] = gg; hist[gg | 0]++; }
     for (i = 255; i >= 0; i--) { cnt += hist[i]; if (cnt > 0.3 * N) { paper = i; break; } }
-    var thr = Math.min(236, paper - 16);
+    var thr = Math.min(236, paper - 16), bl = new Float32Array(N), fh = new Int32Array(64);
     for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
       i = y * w + x; var b = (g[i - w - 1] + g[i - w] + g[i - w + 1] + g[i - 1] + g[i] + g[i + 1] + g[i + w - 1] + g[i + w] + g[i + w + 1]) / 9;
       var sat = Math.max(d[4 * i], d[4 * i + 1], d[4 * i + 2]) - Math.min(d[4 * i], d[4 * i + 1], d[4 * i + 2]);
-      if (b < thr && sat < 40) m[i] = 1;
+      bl[i] = b; if (b < thr && sat < 40) { m[i] = 1; fh[b >> 2]++; }
     }
+    // сплошная заливка потолка/пола одним серым на пол-листа — не стены: без неё стены (часто светлая штриховка)
+    // не сливаются с заливкой, и край стены остаётся
+    var pk = 0; for (i = 1; i < 64; i++) if (fh[i] > fh[pk]) pk = i;
+    if (fh[pk] > 0.12 * N && pk * 4 + 2 < thr - 10) { var lv = pk * 4 + 2; for (i = 0; i < N; i++) if (m[i] && Math.abs(bl[i] - lv) <= 6) m[i] = 0; }
     var er = new Uint8Array(N), op = new Uint8Array(N), R = 2;
     for (y = R; y < h - R; y++) for (x = R; x < w - R; x++) { var ok = 1; for (var dy = -R; dy <= R && ok; dy++) for (var dx = -R; dx <= R; dx++) if (!m[(y + dy) * w + x + dx]) { ok = 0; break; } er[y * w + x] = ok; }
     for (y = R; y < h - R; y++) for (x = R; x < w - R; x++) if (er[y * w + x]) for (var ey = -R; ey <= R; ey++) for (var ex = -R; ex <= R; ex++) op[(y + ey) * w + x + ex] = 1;
     var x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, out = [], all = [];
     polys.forEach(function (Q) { Q.forEach(function (p) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }); });
+    if (!polys.length) { x0 = y0 = 0; x1 = src.width; y1 = src.height; } // весь лист
     var k = P.k, X0 = Math.max(1, Math.floor((x0 - ext) * k)), Y0 = Math.max(1, Math.floor((y0 - ext) * k)), X1 = Math.min(w - 1, Math.ceil((x1 + ext) * k)), Y1 = Math.min(h - 1, Math.ceil((y1 + ext) * k));
     for (y = Y0; y < Y1; y++) for (x = X0; x < X1; x++) { i = y * w + x; if (op[i] && (!op[i - 1] || !op[i + 1] || !op[i - w] || !op[i + w])) all.push([x / k, y / k]); }
     var st = Math.max(1, Math.ceil(all.length / maxN));
@@ -96,7 +101,8 @@
     var srcW = src.width, base = img.width / srcW, Wc = 250, E = edgeDist(img, Wc), kc = E.k * base, best = 1e9, B = null;
     var walls = ext ? wallPts(src, 500, polys, ext, 4000) : [];
     var pts = mix(tplPts(polys, kc, 3), walls.filter(function (_, i) { return i % 4 === 0; }).map(function (p) { return [p[0] * kc, p[1] * kc]; }));
-    var bx = 0, by = 0, bw = 0, bh = 0; polys.forEach(function (P) { P.forEach(function (p) { bx = Math.max(bx, p[0] * kc); by = Math.max(by, p[1] * kc); }); });
+    if (!pts.length) return null;
+    var bx = 0, by = 0, bw = 0, bh = 0; pts.forEach(function (p) { bx = Math.max(bx, p[0]); by = Math.max(by, p[1]); });
     bw = E.w; bh = E.h;
     for (var s = 0.6; s <= 1.62; s += 0.02)
       for (var tx = -Math.round(bx * s); tx <= bw; tx += 2)
@@ -309,5 +315,45 @@
     return all;
   }
 
-  window.MLPFix = { register: register, auto: auto, byClick: byClick, _: { edgeDist: edgeDist } };
+  // Два листа одного проекта (обмерный и освещения) целиком: x_осв = s · x_обм + tx — по толстым стенам всего листа
+  // Грубо — стены к стенам (края всего листа освещения сбивают: потолочные линии, значки, рамка тянут к себе),
+  // точно — как register: стены обмерного к краям листа освещения рядом с найденным положением
+  function ptDist(pts, k, w, h) {
+    var D = new Float32Array(w * h), INF = 1e6, i, x, y;
+    for (i = 0; i < w * h; i++) D[i] = INF;
+    pts.forEach(function (p) { var u = Math.round(p[0] * k), v = Math.round(p[1] * k); if (u >= 0 && v >= 0 && u < w && v < h) D[v * w + u] = 0; });
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { i = y * w + x; var a = D[i];
+      if (x > 0) a = Math.min(a, D[i - 1] + 3); if (y > 0) { a = Math.min(a, D[i - w] + 3); if (x > 0) a = Math.min(a, D[i - w - 1] + 4); if (x < w - 1) a = Math.min(a, D[i - w + 1] + 4); } D[i] = a; }
+    for (y = h - 1; y >= 0; y--) for (x = w - 1; x >= 0; x--) { i = y * w + x; var b = D[i];
+      if (x < w - 1) b = Math.min(b, D[i + 1] + 3); if (y < h - 1) { b = Math.min(b, D[i + w] + 3); if (x < w - 1) b = Math.min(b, D[i + w + 1] + 4); if (x > 0) b = Math.min(b, D[i + w - 1] + 4); } D[i] = b; }
+    for (i = 0; i < w * h; i++) D[i] /= 3;
+    return { D: D, w: w, h: h, k: k };
+  }
+  function sheets(src, img) {
+    var A = wallPts(src, 500, [], 1, 6000), Bp = wallPts(img, 500, [], 1, 6000);
+    if (A.length < 50 || Bp.length < 50) return null;
+    var base = img.width / src.width, Wc = 250, kI = Wc / Math.max(img.width, img.height), E = ptDist(Bp, kI, Math.round(img.width * kI), Math.round(img.height * kI));
+    var kc = kI * base, pts = mix(A.filter(function (_, i) { return i % 3 === 0; }).map(function (p) { return [p[0] * kc, p[1] * kc]; }), []), best = 1e9, B = null, bx = 0, by = 0;
+    pts.forEach(function (p) { bx = Math.max(bx, p[0]); by = Math.max(by, p[1]); });
+    for (var s = 0.6; s <= 1.62; s += 0.02)
+      for (var tx = -Math.round(bx * s); tx <= E.w; tx += 2)
+        for (var ty = -Math.round(by * s); ty <= E.h; ty += 2) {
+          var sc = chamfer(E, pts, s, tx, ty, 6, 40, best);
+          if (sc < best) { best = sc; B = [s, tx, ty]; }
+        }
+    if (!B) return null;
+    // обратная проверка: стены листа освещения к стенам обмерного (чужой лист даёт большой промах)
+    var kS = Wc / Math.max(src.width, src.height), EA = ptDist(A, kS, Math.round(src.width * kS), Math.round(src.height * kS)), rv = 0, rn = 0;
+    Bp.forEach(function (p) { var x = ((p[0] * kI - B[1]) / B[0]) / kc * kS, y = ((p[1] * kI - B[2]) / B[0]) / kc * kS; x = Math.round(x); y = Math.round(y);
+      if (x >= 0 && y >= 0 && x < EA.w && y < EA.h) { rv += Math.min(6, EA.D[y * EA.w + x]); rn++; } });
+    var Wf = 1000, F = edgeDist(img, Wf), kf = F.k * base, pf = mix(A.map(function (p) { return [p[0] * kf, p[1] * kf]; }), []), r = Wf / Wc, bf = 1e9, R = null;
+    for (var s2 = B[0] - 0.03; s2 <= B[0] + 0.031; s2 += 0.005)
+      for (var tx2 = Math.round(B[1] * r) - 12; tx2 <= Math.round(B[1] * r) + 12; tx2++)
+        for (var ty2 = Math.round(B[2] * r) - 12; ty2 <= Math.round(B[2] * r) + 12; ty2++) {
+          var sf = chamfer(F, pf, s2, tx2, ty2, 10, 80, bf);
+          if (sf < bf) { bf = sf; R = [s2, tx2, ty2]; }
+        }
+    return { s: R[0] * base, tx: R[1] / F.k, ty: R[2] / F.k, score: bf, fwd: best, rev: rn ? rv / rn : 6 };
+  }
+  window.MLPFix = { register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist } };
 })();

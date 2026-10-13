@@ -921,7 +921,22 @@
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
         return file.arrayBuffer();
       }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; })
-        .then(function (doc) { return (doc.numPages > 1 ? pickPage(doc, lit) : Promise.resolve(1)).then(function (n) { return pdfPage(doc, n); }); });
+        .then(function (doc) {
+          return (doc.numPages > 1 ? pickPage(doc, lit) : Promise.resolve(1)).then(function (n) {
+            return Promise.all([pdfPage(doc, n), doc.numPages > 1 && !lit ? docScores(doc) : null]).then(function (a) {
+              var c = a[0], S = a[1];
+              if (S) {
+                c._pdf.lit = S[n - 1].L >= 3;
+                // выбран не обмерный лист (освещения, потолков) — стены ищем на обмерном того же проекта:
+                // значки и линии светильников мешают распознаванию
+                var w = 0; S.forEach(function (o, k) { if (k !== n - 1 && o.W >= 2 && (!w || o.W > S[w - 1].W)) w = k + 1; });
+                // (экспликация помещений бывает и на листе освещения — сравниваем с лучшим обмерным)
+                if (w && (S[n - 1].L >= 2 || S[n - 1].W < S[w - 1].W)) c._pdf.wall = w;
+              }
+              return c;
+            });
+          });
+        });
     }
     return new Promise(function (ok, no) {
       var url = URL.createObjectURL(file), im = new Image();
@@ -940,11 +955,20 @@
     if (lit) return /план[а-я\s]{0,25}(осветит|светильник|освещени)/.test(t) ? 4 : /осветит|светильник/.test(t) ? 3 : /освещени|софит|спот/.test(t) ? 2 : /потолк/.test(t) ? 1 : 0;
     return /обмер/.test(t) ? 3 : /экспликац/.test(t) ? 2 : n ? 1 : 0;
   }
+  function pageText(doc, k) {
+    var S = doc._sc || (doc._sc = []);
+    if (S[k]) return Promise.resolve(S[k]);
+    return doc.getPage(k + 1).then(function (pg) { return pg.getTextContent(); }).then(function (tc) {
+      var t = tc.items.map(function (x) { return x.str; }).join(' ');
+      return (S[k] = { L: pageScore(t, true), W: pageScore(t, false) });
+    }, function () { return (S[k] = { L: 0, W: 0 }); });
+  }
+  function docScores(doc) { var a = []; for (var k = 0; k < doc.numPages; k++) a.push(pageText(doc, k)); return Promise.all(a); }
   function pickPage(doc, lit) {
     var box = $('mlp-pages'), grid = $('mlp-pgrid'), N = doc.numPages, done = false, best = 1, bs = 0;
     if (view3d) setView('plan');
     grid.innerHTML = ''; box.hidden = false;
-    $('mlp-pmsg').textContent = 'В файле ' + N + ' стр. ' + (lit ? 'Выберите лист, где нарисованы светильники (план освещения, привязка светильников).' : 'Выберите лист с планом квартиры — лучше обмерный, без мебели.');
+    $('mlp-pmsg').textContent = 'В файле ' + N + ' стр. ' + (lit ? 'Выберите лист, где нарисованы светильники (план освещения, привязка светильников).' : 'Выберите лист с планом освещения — по нему сразу перенесём светильники. Если его нет — обмерный план без мебели.');
     root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
     var btns = [];
     for (var i = 1; i <= N; i++) {
@@ -956,18 +980,26 @@
       grid.onclick = function (e) { var b = e.target.closest('.pg'); if (b) finish(+b.dataset.n); };
       $('mlp-pcancel').onclick = function () { finish(0); };
       // по порядку: текст листа (подсветка подходящего обновляется по ходу) и миниатюра
-      function mark(n) {
+      function mark(n, L) {
         btns.forEach(function (b, k) { b.classList.remove('best'); b.querySelector('.pn').textContent = k + 1; });
-        btns[n - 1].classList.add('best'); btns[n - 1].querySelector('.pn').textContent = n + (lit ? ' · похоже на свет' : ' · похоже на план');
+        btns[n - 1].classList.add('best'); btns[n - 1].querySelector('.pn').textContent = n + (lit || L ? ' · план освещения' : ' · похоже на план');
       }
+      // сначала текст всех листов (быстро) — подсветка сразу верная, потом миниатюры
       var p = Promise.resolve();
       btns.forEach(function (b, k) {
         p = p.then(function () {
           if (done) return;
+          // для обводки лист освещения лучше обмерного: стены найдём на обмерном, а светильники уже на месте
+          return pageText(doc, k).then(function (o) {
+            var s = lit ? o.L : o.L >= 3 ? 5 + o.L : o.W; if (s > bs) { bs = s; best = k + 1; mark(best, o.L >= 3); }
+          });
+        });
+      });
+      btns.forEach(function (b, k) {
+        p = p.then(function () {
+          if (done) return;
           return doc.getPage(k + 1).then(function (pg) {
-            return pg.getTextContent().then(function (tc) {
-              var s = pageScore(tc.items.map(function (x) { return x.str; }).join(' '), lit); if (s > bs) { bs = s; best = k + 1; mark(best); }
-            }, function () {}).then(function () {
+            return Promise.resolve().then(function () {
               if (done) return;
               var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 220 / Math.max(v1.width, v1.height) });
               var c = document.createElement('canvas'), x = c.getContext('2d'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
@@ -1155,6 +1187,25 @@
     if (mode === 'drag' && tr.closed && !M.isSimple(tr.pts)) trMsg('Стены пересекаются — передвиньте точку.');
     tr.h.rec(); drawTrace(); traceUI();
   }
+  // План — лист освещения: стены ищем на обмерном листе того же PDF, совмещённом с ним (x_осв = s · x_обм + t).
+  // Готовим заранее, сразу после открытия; null — обмерного нет или он не совместился
+  function wallPrep(img) {
+    if (!img._pdf || !img._pdf.wall) return Promise.resolve(null);
+    if (!img._wallP) img._wallP = (window.MLPFix ? Promise.resolve() : loadScript(BASE + 'fixtures.js' + VER))
+      .then(function () { return pdfPage(img._pdf.doc, img._pdf.wall); })
+      .then(function (c) { var R = window.MLPFix.sheets(c, img); return R && R.rev < 3.8 ? { c: c, R: R } : null; })
+      .catch(function () { return null; });
+    return img._wallP;
+  }
+  function wallDetect(img, p) {
+    return wallPrep(img).then(function (W) {
+      if (W) {
+        var R = W.R, r = window.MLPAutoWall.detect(W.c, [(p[0] - R.tx) / R.s, (p[1] - R.ty) / R.s]);
+        if (r.pts) { r.pts = r.pts.map(function (q) { return [q[0] * R.s + R.tx, q[1] * R.s + R.ty]; }); return r; }
+      }
+      return window.MLPAutoWall.detect(img, p);
+    });
+  }
   // Автопоиск стен комнаты вокруг точки (autowall.js грузится при первом нажатии)
   function autoFind(p) {
     var t = tr; if (t.busy) return;
@@ -1162,8 +1213,9 @@
     (window.MLPAutoWall ? Promise.resolve() : loadScript(BASE + 'autowall.js' + VER))
       .then(function () { return new Promise(function (ok) { setTimeout(ok, 30); }); }) // дать показать «Ищем стены…»
       .then(function () {
-        if (tr !== t) return;
-        var r = window.MLPAutoWall.detect(t.img, p);
+        return tr === t && wallDetect(t.img, p);
+      }).then(function (r) {
+        if (tr !== t || !r) return;
         if (!r.pts) {
           trMsg(r.error === 'edge'
             ? 'Не нашли замкнутую комнату: похоже, нажали снаружи, в стене разрыв или комната обрезана краем картинки. Нажмите в другом месте комнаты или обведите углы вручную.'
@@ -1227,8 +1279,8 @@
   function startFix() {
     var img = planImg(); if (!img || tr) return;
     var btn = root.querySelector('[data-rt="fix"]'); if (btn) { btn.disabled = true; btn.textContent = 'Открываем лист…'; }
-    var p = img._pdf
-      ? (img._pdf.doc.numPages > 1 ? pickPage(img._pdf.doc, true) : Promise.resolve(img._pdf.n)).then(function (n) { return pdfPage(img._pdf.doc, n); })
+    var p = img._pdf && img._pdf.lit ? Promise.resolve(img) : img._pdf
+      ? (img._pdf.doc.numPages > 1 ? pickPage(img._pdf.doc, true) : Promise.resolve(img._pdf.n)).then(function (n) { return n === img._pdf.n ? img : pdfPage(img._pdf.doc, n); })
       : new Promise(function (ok, no) { // план был картинкой — лист со светильниками загружают отдельно
         var inp = $('mlp-ffile'); inp.value = '';
         inp.onchange = function () { var fl = inp.files && inp.files[0]; if (!fl) { no('cancel'); return; } loadPlan(fl, true).then(ok, no); };
@@ -1246,7 +1298,7 @@
         if (tr !== t) return;
         var mine = rooms.filter(function (r) { return r.bg && r.bg.img === img; });
         var polys = mine.map(function (r) { var m = bgMatrix(r); return polyOf(r).map(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; }); });
-        var R = window.MLPFix.register(polys, img, lim, 4 / mine[0].bg.mpp); // стены в радиусе 4 м вокруг обведённых комнат
+        var R = lim === img ? { s: 1, tx: 0, ty: 0, score: 0 } : window.MLPFix.register(polys, img, lim, 4 / mine[0].bg.mpp); // стены в радиусе 4 м вокруг обведённых комнат
         if (!R) { trMsg('Не удалось совместить этот лист с планом комнат. Попробуйте другой лист.'); return; }
         t.fx.reg = R; t.fx.rooms = mine; t.fx.polys = polys; t.fx.ppm = R.s / mine[0].bg.mpp; // пикселей листа на метр
         window.MLPFix.auto(lim, t.fx.ppm).forEach(function (g) { fxAdd(t, g, g.kind === 'pendant' || g.pts.length >= 8); });
@@ -1352,7 +1404,7 @@
   $('mlp-file').addEventListener('change', function () {
     var f = this.files && this.files[0], inp = this, btn = $('mlp-trace'); if (!f) return;
     btn.disabled = true; btn.textContent = 'Открываем план…';
-    loadPlan(f).then(startTrace, function (e) { if (e === 'cancel') return; alert('Не удалось открыть файл. Подойдёт фото или скан плана (JPG, PNG) или PDF.'); })
+    loadPlan(f).then(function (c) { startTrace(c); setTimeout(function () { wallPrep(c); }, 300); }, function (e) { if (e === 'cancel') return; alert('Не удалось открыть файл. Подойдёт фото или скан плана (JPG, PNG) или PDF.'); })
       .then(function () { btn.disabled = false; inp.value = ''; traceUI(); });
   });
   $('mlp-tlen').addEventListener('keydown', function (e) { if (e.key === 'Enter') finishTrace(); });
@@ -1541,5 +1593,5 @@
   st.poly = makePoly(); addGroup('pendant'); addGroup('spot');
   renderDims(); renderGroups(); legend(); update(); renderTabs();
   clearTimeout(hT); histRec(); // исходное состояние — первая точка истории
-  window.MLPlanner = { get state() { return st; }, fixTrace: function (lim) { fixTrace(planImg(), lim); }, rooms: function () { return rooms; }, openRoom: function (i) { openRoom(rooms[i]); }, openAll: openAll, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
+  window.MLPlanner = { get state() { return st; }, fixTrace: function (lim) { fixTrace(planImg(), lim); }, rooms: function () { return rooms; }, openRoom: function (i) { openRoom(rooms[i]); }, openAll: openAll, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace, autoFind: function (p) { autoFind(p); } }; // для отладки
 })();

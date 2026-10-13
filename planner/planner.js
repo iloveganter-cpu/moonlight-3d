@@ -76,6 +76,11 @@
     '.mlp .symrec{margin:0 0 18px;padding:12px 16px;border-radius:8px;background:#fff3e0;border:1px solid #ffb74d;font-size:15px;display:flex;flex-direction:column;gap:10px}' +
     '.mlp .symrec div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.mlp .symrec span{flex:1;min-width:220px}' +
     '.mlp .tbar{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:14px}.mlp .tbar .tools{margin-top:8px}' +
+    '.mlp .pages{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:14px}.mlp .pages-h{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}' +
+    '.mlp .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;max-height:520px;overflow:auto;padding:2px}' +
+    '.mlp .pg{display:flex;flex-direction:column;gap:4px;align-items:center;border:1px solid #ccc;border-radius:6px;background:#fafafa;padding:6px;cursor:pointer;font:inherit;font-size:12px;color:var(--ink)}' +
+    '.mlp .pg:hover{border-color:#000}.mlp .pg.best{border:2px solid #2e7d32;background:#e8f5e9}.mlp .pg canvas{width:100%;height:auto;border-radius:3px;cursor:pointer}' +
+    '.mlp .pg .ph{display:block;width:100%;aspect-ratio:1.41;background:#eee;border-radius:3px}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
     '@media (max-width:480px){.mlp h2{font-size:23px}.mlp .row.m1{grid-template-columns:minmax(0,1fr)}.mlp .seg button{font-size:11px}.mlp .sum b{font-size:20px}}';
@@ -117,6 +122,7 @@
           '<label><input type="checkbox" id="mlp-tortho" checked> Прямые углы</label></div>' +
           '<div class="hint">Колесо мыши или два пальца — масштаб, перетаскивание — сдвиг. Углы можно двигать, двойной щелчок — удалить. Файл никуда не отправляется — всё в вашем браузере.</div>' +
           '<div class="hint note" id="mlp-tmsg" hidden></div></div>' +
+        '<div class="pages" id="mlp-pages" hidden><div class="pages-h"><span id="mlp-pmsg"></span><button type="button" class="btn small ghost" id="mlp-pcancel">Отмена</button></div><div class="pgrid" id="mlp-pgrid"></div></div>' +
         '<canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
         '<div id="mlp-3d" class="v3d" hidden><div class="v3d-msg" id="mlp-3dmsg">Загружаем 3D…</div></div>' +
         '<div class="legend" id="mlp-legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
@@ -686,7 +692,7 @@
         window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js';
         return file.arrayBuffer();
       }).then(function (buf) { return window.pdfjsLib.getDocument({ data: buf }).promise; })
-        .then(function (doc) { return doc.getPage(1); })
+        .then(function (doc) { return doc.numPages > 1 ? pickPage(doc).then(function (n) { return doc.getPage(n); }) : doc.getPage(1); })
         .then(function (pg) {
           var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 2400 / Math.max(v1.width, v1.height) });
           var c = document.createElement('canvas'), x = c.getContext('2d');
@@ -700,6 +706,52 @@
       im.onload = function () { URL.revokeObjectURL(url); ok(fitImage(im, im.naturalWidth, im.naturalHeight)); };
       im.onerror = function () { URL.revokeObjectURL(url); no(); };
       im.src = url;
+    });
+  }
+  // Дизайн-проект — десятки листов (обложка, ведомость, планы, развёртки): показываем миниатюры, лист с обмерным
+  // планом подсвечиваем по тексту. Кириллица в PDF из старых программ бывает записана как latin-1 (cp1251) — чиним.
+  function pageScore(t) {
+    t = t.replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).toLowerCase();
+    var n = (t.match(/план/g) || []).length;
+    if (n > 4 || /ведомост/.test(t)) return 0; // ведомость чертежей перечисляет все листы
+    return /обмер/.test(t) ? 3 : /экспликац/.test(t) ? 2 : n ? 1 : 0;
+  }
+  function pickPage(doc) {
+    var box = $('mlp-pages'), grid = $('mlp-pgrid'), N = doc.numPages, done = false, best = 1, bs = 0;
+    if (view3d) setView('plan');
+    grid.innerHTML = ''; box.hidden = false; $('mlp-pmsg').textContent = 'В файле ' + N + ' стр. Выберите лист с планом квартиры — лучше обмерный, без мебели.';
+    root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var btns = [];
+    for (var i = 1; i <= N; i++) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'pg'; b.dataset.n = i;
+      b.innerHTML = '<span class="ph"></span><span class="pn">' + i + '</span>'; grid.appendChild(b); btns.push(b);
+    }
+    return new Promise(function (ok, no) {
+      function finish(n) { if (done) return; done = true; box.hidden = true; grid.innerHTML = ''; n ? ok(n) : no('cancel'); }
+      grid.onclick = function (e) { var b = e.target.closest('.pg'); if (b) finish(+b.dataset.n); };
+      $('mlp-pcancel').onclick = function () { finish(0); };
+      // по порядку: текст листа (подсветка подходящего обновляется по ходу) и миниатюра
+      function mark(n) {
+        btns.forEach(function (b, k) { b.classList.remove('best'); b.querySelector('.pn').textContent = k + 1; });
+        btns[n - 1].classList.add('best'); btns[n - 1].querySelector('.pn').textContent = n + ' · похоже на план';
+      }
+      var p = Promise.resolve();
+      btns.forEach(function (b, k) {
+        p = p.then(function () {
+          if (done) return;
+          return doc.getPage(k + 1).then(function (pg) {
+            return pg.getTextContent().then(function (tc) {
+              var s = pageScore(tc.items.map(function (x) { return x.str; }).join(' ')); if (s > bs) { bs = s; best = k + 1; mark(best); }
+            }, function () {}).then(function () {
+              if (done) return;
+              var v1 = pg.getViewport({ scale: 1 }), vp = pg.getViewport({ scale: 220 / Math.max(v1.width, v1.height) });
+              var c = document.createElement('canvas'), x = c.getContext('2d'); c.width = Math.round(vp.width); c.height = Math.round(vp.height);
+              x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+              return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { if (!done) b.replaceChild(c, b.firstChild); });
+            });
+          }).catch(function () {});
+        });
+      });
     });
   }
   function startTrace(img) {
@@ -926,7 +978,7 @@
   $('mlp-file').addEventListener('change', function () {
     var f = this.files && this.files[0], inp = this, btn = $('mlp-trace'); if (!f) return;
     btn.disabled = true; btn.textContent = 'Открываем план…';
-    loadPlan(f).then(startTrace, function () { alert('Не удалось открыть файл. Подойдёт фото или скан плана (JPG, PNG) или PDF.'); })
+    loadPlan(f).then(startTrace, function (e) { if (e === 'cancel') return; alert('Не удалось открыть файл. Подойдёт фото или скан плана (JPG, PNG) или PDF.'); })
       .then(function () { btn.disabled = false; inp.value = ''; traceUI(); });
   });
   $('mlp-tlen').addEventListener('keydown', function (e) { if (e.key === 'Enter') finishTrace(); });

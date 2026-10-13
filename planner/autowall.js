@@ -94,6 +94,16 @@
     }
     return m;
   }
+  // Светлые стены: бледная заливка или частая тонкая штриховка (после уменьшения — ровный светло-серый).
+  // Порог по размытой картинке: стена ≈ 225, подкраска комнат в цвет ≈ 245, бумага 255
+  function tintMask(G) {
+    var w = G.w, h = G.h, b = boxBlur(G.g, w, h, 1), m = new Uint8Array(w * h), hist = new Int32Array(256), i, n = 0, paper = 255;
+    for (i = 0; i < w * h; i++) hist[G.g[i]]++;
+    for (i = 255; i >= 0; i--) { n += hist[i]; if (n > 0.3 * w * h) { paper = i; break; } }
+    var thr = Math.min(236, paper - 16);
+    for (i = 0; i < w * h; i++) m[i] = b[i] < thr ? 1 : 0;
+    return m; // размытие раздувает стены на пиксель — найденную комнату потом расширяем обратно (grow1)
+  }
   // Шахматное расстояние (L∞) до ближайшего пикселя, где m = 0; за краем картинки — «стена нет»
   function cheb(m, w, h, edge) {
     var d = new Int32Array(w * h), INF = 1 << 28, x, y, i, v;
@@ -342,7 +352,9 @@
     var out = []; for (i = 0; i < n; i++) if (keep[i]) out.push(i); return out;
   }
   // Отрезки → прямые (по осям, если почти по осям) → пересечения; короткие стены убираем
-  function vectorize(P, minEdge) {
+  // minStep — ступеньки и ниши мельче этого (оконный проём на толщину стены, выступ колонны) сглаживаем
+  function vectorize(P, minEdge, minStep) {
+    minStep = Math.max(minEdge, minStep || 0);
     var n = P.length, idx = dp(P, 1.6), m = idx.length; if (m < 3) return null;
     var SN = Math.sin(7 * Math.PI / 180), L = [];
     function mk(t, c, o, p, d, len, e0, e1) { return { t: t, c: c, o: o, p: p, d: d, len: len, e0: e0, e1: e1 }; }
@@ -356,6 +368,11 @@
       else if (Math.abs(dx) / len < SN) L.push(mk('v', cx, dy > 0 ? 1 : -1, null, null, len, A, B));
       else L.push(mk('d', 0, 0, [cx, cy], [dx / len, dy / len], len, A, B));
     }
+    // контур почти весь по осям — короткие косые куски (срезанный угол, размытый край) убираем, иначе после
+    // удаления соседей такой кусок вытягивается в длинную диагональ через всю комнату
+    var all = 0, axl = 0; L.forEach(function (l) { all += l.len; if (l.t !== 'd') axl += l.len; });
+    if (axl > 0.85 * all) L = L.filter(function (l) { return l.t !== 'd' || l.len >= 3 * minEdge; });
+    if (L.length < 3) return null;
     function dirOf(l) { return l.t === 'h' ? [l.o, 0] : l.t === 'v' ? [0, l.o] : l.d; }
     function ptOf(l) { return l.t === 'h' ? [l.e0[0], l.c] : l.t === 'v' ? [l.c, l.e0[1]] : l.p; }
     function cross(a, b) {
@@ -394,8 +411,11 @@
     function edgeLen(V, k4) { var a = V[k4], b = V[(k4 + 1) % V.length]; return Math.hypot(b[0] - a[0], b[1] - a[1]); }
     tidy();
     for (var guard2 = 0; guard2 < 300 && L.length > 3; guard2++) {
-      var V = verts(), nn = L.length, worst = -1, wl2 = minEdge;
-      for (k = 0; k < nn; k++) { var e = edgeLen(V, k); if (e < wl2) { wl2 = e; worst = k; } }
+      var V = verts(), nn = L.length, worst = -1, wl2 = 1;
+      for (k = 0; k < nn; k++) {
+        var e = edgeLen(V, k), lim = cross(L[(k - 1 + nn) % nn], L[(k + 1) % nn]) ? minEdge : minStep; // соседи параллельны — ступенька
+        if (e / lim < wl2) { wl2 = e / lim; worst = k; }
+      }
       if (worst < 0) break;
       roll(worst - 1); var prev = L[0], next = L[2];
       if (cross(prev, next)) L.splice(1, 1);                 // срезанный угол
@@ -420,6 +440,21 @@
   }
   function areaOf(P) { var s = 0; for (var i = 0; i < P.length; i++) { var a = P[i], b = P[(i + 1) % P.length]; s += a[0] * b[1] - b[0] * a[1]; } return Math.abs(s) / 2; }
 
+  // Типичная толщина стен вокруг комнаты: стенные пиксели в полосе у её границы, медиана по «гребням» (2·глубина+1)
+  function wallT(W, reg, w, h) {
+    var N = w * h, inv = new Uint8Array(N), i;
+    for (i = 0; i < N; i++) inv[i] = reg[i] ? 0 : 1;
+    var dr = cheb(inv, w, h, false), dw = cheb(W, w, h, true), v = [];
+    for (i = 0; i < N; i++) {
+      if (!W[i] || dr[i] > 30) continue;
+      var d = dw[i], x = i % w, y = (i / w) | 0;
+      if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) continue;
+      if (d >= dw[i - 1] && d >= dw[i + 1] && d >= dw[i - w] && d >= dw[i + w]) v.push(d);
+    }
+    if (!v.length) return 0;
+    v.sort(function (a, b) { return a - b; });
+    return 2 * v[v.length >> 1] + 1;
+  }
   // Закрытие квадратом радиуса r: заливает узкие светлые полосы между линиями (стены, нарисованные контуром,
   // штриховка, окна), комнаты шире — остаются
   function closeMask(m, w, h, r) {
@@ -445,34 +480,92 @@
     // 3) как есть, со всеми линиями.
     var V = [];
     if (t1) V.push({ t: t1 });
-    [3, 5, 8, 12, 17].forEach(function (r) { V.push({ c: Math.round(r * S1), t: Math.max(t1, 2) }); });
+    // 1а) стены светлые (бледная заливка, тонкая штриховка) — тёмная маска их не видит; вариант нужен, только
+    // если светлого «не тёмного» много (иначе это просто размытые края линий)
+    var Tn = tintMask(G), extra = 0, i3;
+    for (i3 = 0; i3 < w * h; i3++) if (Tn[i3] && !Dk[i3]) extra++;
+    var VT = [], lightR = 0, dkF = 0, tnF = 0;
+    if (extra > 0.02 * w * h) {
+      for (i3 = 0; i3 < w * h; i3++) if (Dk[i3]) Tn[i3] = 1;
+      var Dt = dropText(Tn, w, h), t2 = Math.max(t1, 2);
+      VT.push({ src: Dt, t: t2 });
+      [3, 5].forEach(function (r) { VT.push({ src: Dt, c: Math.round(r * S1), t: t2 }); });
+      // светлые ли стены на всём плане: толстого «стенного» в светлой маске намного больше, чем в тёмной
+      var sumOf = function (m) { var s = 0; for (var i4 = 0; i4 < w * h; i4++) s += m[i4]; return s; };
+      var sT = sumOf(filterWalls(openMask(Dt, w, h, t2), w, h, t2, 0.03)), sD = sumOf(filterWalls(openMask(Dk, w, h, t2), w, h, t2, 0.03));
+      lightR = sT / Math.max(1, sD); dkF = sD / (w * h); tnF = sT / (w * h);
+    }
+    // светлое на полкартинки — неровный свет на фото; светлого совсем мало — не стены, а размытые края линий
+    var LIGHT = lightR > (opt.lightR || 2) && tnF > 0.01 && tnF < 0.3;
+    // на планах со светлыми стенами — сразу после мелких закрытий (крупные там склеивают пунктир балок в стены),
+    // на обычных — запасной вариант после всех остальных
+    [3, 5, 8, 12, 17].forEach(function (r, j) {
+      if (LIGHT && j === 2) V = V.concat(VT);
+      V.push({ c: Math.round(r * S1), t: Math.max(t1, 2) });
+    });
+    if (!LIGHT) V = V.concat(VT);
     V.push({ t: 0 });
     var pick = null, backup = null;
     for (var vi = 0; vi < V.length && !pick; vi++) {
-      var v = V[vi], m0 = v.c ? closeMask(Dk, w, h, v.c) : Dk;
+      var v = V[vi], src = v.src || Dk, m0 = v.c ? closeMask(src, w, h, v.c) : src;
       var W = filterWalls(openMask(m0, w, h, v.t), w, h, v.t, v.c ? 0.1 : 0.03);
       if (G.oob) for (var i2 = 0; i2 < w * h; i2++) if (G.oob[i2]) W[i2] = 1; // за краем исходной картинки — «стена», касание отметим ниже
       var r = room(W, w, h, seed, ALPHA, G.oob); if (!r) continue;
-      var S = solid(r.reg, w, h, G.oob), x = { v: v, s: S, r: r, ok: !S.edge && !r.clipped && S.area > 300 && S.area < 0.5 * w * h };
+      var S = solid(r.reg, w, h, G.oob), x = { v: v, s: S, r: r, W: W, ok: !S.edge && !r.clipped && S.area > 300 && S.area < 0.5 * w * h };
       if (opt.dbg) opt.dbg.push({ c: v.c || 0, W: W, reg: S.m, w: w, h: h });
       res.push(x);
       // залили по водоразделу (какой-то проём не закрылся) — запасной вариант, пробуем следующие
       if (x.ok) { if (!r.fallback) pick = x; else if (!backup) backup = x; }
     }
     if (!pick) pick = backup;
-    var info = { ax: +(ax * 180 / Math.PI).toFixed(2), thin: t1, k: k, tries: res.map(function (x) { return [x.v.c || 0, x.v.t, x.s.area, x.ok]; }) };
+    var info = { ax: +(ax * 180 / Math.PI).toFixed(2), lightR: +lightR.toFixed(2), dkF: +dkF.toFixed(4), tnF: +tnF.toFixed(4), thin: t1, k: k, tries: res.map(function (x) { return [x.v.c || 0, x.v.t, x.s.area, x.ok]; }) };
     if (!pick) return { error: res.some(function (x) { return x.s.edge || x.r.clipped; }) ? 'edge' : 'none', info: info };
+    if (pick.v.src) { // светлые стены искали по размытой картинке — они вышли на пиксель толще, комнату расширяем
+      var inv6 = new Uint8Array(w * h), i6; for (i6 = 0; i6 < w * h; i6++) inv6[i6] = pick.s.m[i6] ? 0 : 1;
+      var d6 = cheb(inv6, w, h, false), g6 = new Uint8Array(w * h), a6 = 0;
+      for (i6 = 0; i6 < w * h; i6++) if (d6[i6] <= 1) { g6[i6] = 1; a6++; }
+      pick.s = { m: g6, area: a6, edge: false };
+    }
     // узкие вырезы в комнате (полотно двери или линия, прилипшие к стене) заполняем
     var RM = closeMask(pick.s.m, w, h, Math.max(2, Math.round(3 * S1)));
-    var P = contour(RM, w, h), minEdge = Math.max(4, 0.045 * Math.sqrt(pick.s.area));
+    // и наоборот, узкие зубцы наружу (комната заходит в стену между штрихами штриховки) срезаем открытием;
+    // если открытие разорвало узкий перешеек — оставляем часть, где нажали
+    var RO = openMask(RM, w, h, Math.max(2, Math.round(2 * S1))), sd = pick.r.seed;
+    if (RO[sd] && !opt.noRO) {
+      var kp = new Uint8Array(w * h), stk = [sd]; kp[sd] = 1;
+      while (stk.length) {
+        var c5 = stk.pop(), x5 = c5 % w, y5 = (c5 / w) | 0;
+        [[x5 - 1, y5], [x5 + 1, y5], [x5, y5 - 1], [x5, y5 + 1]].forEach(function (e) {
+          if (e[0] < 0 || e[1] < 0 || e[0] >= w || e[1] >= h) return;
+          var j5 = e[1] * w + e[0]; if (RO[j5] && !kp[j5]) { kp[j5] = 1; stk.push(j5); }
+        });
+      }
+      var a5 = 0; for (var i5 = 0; i5 < w * h; i5++) a5 += kp[i5];
+      if (a5 > 0.85 * pick.s.area) RM = kp;
+    }
+    var P = contour(RM, w, h); if (opt.keepP) info.P = P; var minEdge = Math.max(4, 0.045 * Math.sqrt(pick.s.area)), wt = wallT(pick.W, pick.s.m, w, h);
     // упрощение изредка даёт самопересечение — пробуем мельче, в крайнем случае просто Дуглас — Пекер
-    function okV(X) { return X && X.length >= 3 && simple(X) && Math.abs(areaOf(X) - pick.s.area) < 0.25 * pick.s.area; }
-    var Vs = vectorize(P, minEdge);
+    // и каждый угол рядом с настоящей границей — площадь может сойтись и при шипе, ушедшем за стену
+    function nearP(q, lim) {
+      for (var j = 0; j < P.length; j++) {
+        var a = P[j], b = P[(j + 1) % P.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+        var t = L2 ? Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2)) : 0;
+        if (Math.hypot(a[0] + t * dx - q[0], a[1] + t * dy - q[1]) <= lim) return true;
+      }
+      return false;
+    }
+    function okV(X) {
+      if (!X || X.length < 3 || !simple(X) || Math.abs(areaOf(X) - pick.s.area) >= 0.25 * pick.s.area) return false;
+      var lim = Math.max(2 * minEdge, 1.5 * wt);
+      return X.every(function (q) { return nearP(q, lim); });
+    }
+    var Vs = vectorize(P, minEdge, opt.noStep ? 0 : Math.min(1.5 * wt, 0.12 * Math.sqrt(pick.s.area)));
+    if (!okV(Vs)) Vs = vectorize(P, minEdge);
     if (!okV(Vs)) Vs = vectorize(P, minEdge / 2);
     if (!okV(Vs)) Vs = dp(P, 2).map(function (i) { return P[i]; });
     if (!okV(Vs)) return { error: 'shape', info: info };
     var pts = Vs.map(function (p) { var q = unrotP(p, ax, C); return [q[0] / k, q[1] / k]; });
-    info.c = pick.v.c || 0; info.t = pick.v.t; info.sDoor = pick.r.sDoor; info.doors = pick.r.doors; info.closed = pick.r.closed; info.fb = pick.r.fallback; info.area = pick.s.area;
+    info.c = pick.v.c || 0; info.t = pick.v.t; info.sDoor = pick.r.sDoor; info.doors = pick.r.doors; info.closed = pick.r.closed; info.fb = pick.r.fallback; info.area = pick.s.area; info.wt = wt;
     return { pts: pts, axis: ax, info: info };
   }
   window.MLPAutoWall = { detect: detect, _: { skewOf: skewOf, contour: contour, vectorize: vectorize } };

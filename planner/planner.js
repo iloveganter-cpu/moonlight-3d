@@ -112,9 +112,10 @@
           '<button type="button" class="btn small ghost" id="mlp-tundo" title="Ctrl+Z">Отменить</button>' +
           '<button type="button" class="btn small ghost" id="mlp-tredo" title="Ctrl+Y">Вернуть</button>' +
           '<button type="button" class="btn small ghost" id="mlp-treset">Заново</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-tmode">Обвести вручную</button>' +
           '<button type="button" class="btn small ghost" id="mlp-tquit">Выйти</button>' +
           '<label><input type="checkbox" id="mlp-tortho" checked> Прямые углы</label></div>' +
-          '<div class="hint">Колесо мыши или два пальца — масштаб, перетаскивание — сдвиг. Точки можно двигать, двойной щелчок — удалить. Файл никуда не отправляется — всё в вашем браузере.</div>' +
+          '<div class="hint">Колесо мыши или два пальца — масштаб, перетаскивание — сдвиг. Углы можно двигать, двойной щелчок — удалить. Файл никуда не отправляется — всё в вашем браузере.</div>' +
           '<div class="hint note" id="mlp-tmsg" hidden></div></div>' +
         '<canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
         '<div id="mlp-3d" class="v3d" hidden><div class="v3d-msg" id="mlp-3dmsg">Загружаем 3D…</div></div>' +
@@ -703,7 +704,7 @@
   }
   function startTrace(img) {
     if (view3d) setView('plan');
-    tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0 };
+    tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0, auto: true, found: false };
     tr.h = Hist(function () { return { key: JSON.stringify([tr.pts, tr.closed, tr.sel, tr.axis]) }; },
       function (s) { var o = JSON.parse(s.key); tr.pts = o[0]; tr.closed = o[1]; tr.sel = o[2]; tr.axis = o[3]; tr.hov = null; trMsg(''); drawTrace(); traceUI(); });
     tr.h.rec();
@@ -805,8 +806,13 @@
     $('mlp-trace').textContent = st.bg ? 'Загрузить другой план' : 'Обвести по своему плану';
     if (!on) return;
     $('mlp-tstep').innerHTML = tr.closed
-      ? '<b>Шаг 2 из 2.</b> Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
+      ? (tr.found ? '<b>Шаг 2 из 2.</b> Стены найдены автоматически — проверьте контур: углы можно перетащить, лишний убрать двойным щелчком, не та комната — «Заново». ' : '<b>Шаг 2 из 2.</b> ') +
+        'Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
+      : tr.auto ? '<b>Шаг 1 из 2.</b> Нажмите внутри нужной комнаты — стены найдутся сами. Если план сложный, обведите углы вручную.'
       : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.';
+    $('mlp-tmode').hidden = tr.closed || (!tr.auto && tr.pts.length > 0);
+    $('mlp-tmode').textContent = tr.auto ? 'Обвести вручную' : 'Найти стены автоматически';
+    $('mlp-tortho').parentNode.hidden = tr.auto && !tr.closed;
     $('mlp-tlenrow').hidden = $('mlp-tdone').hidden = !tr.closed;
     $('mlp-tdone').disabled = !trMpp();
     var c = tr.h.can(); $('mlp-tundo').disabled = !c[0]; $('mlp-tredo').disabled = !c[1];
@@ -853,7 +859,30 @@
     if (mode === 'drag' && tr.closed && !M.isSimple(tr.pts)) trMsg('Стены пересекаются — передвиньте точку.');
     tr.h.rec(); drawTrace(); traceUI();
   }
+  // Автопоиск стен комнаты вокруг точки (autowall.js грузится при первом нажатии)
+  function autoFind(p) {
+    var t = tr; if (t.busy) return;
+    t.busy = true; trMsg('Ищем стены…'); cv.style.cursor = 'progress';
+    (window.MLPAutoWall ? Promise.resolve() : loadScript(BASE + 'autowall.js' + VER))
+      .then(function () { return new Promise(function (ok) { setTimeout(ok, 30); }); }) // дать показать «Ищем стены…»
+      .then(function () {
+        if (tr !== t) return;
+        var r = window.MLPAutoWall.detect(t.img, p);
+        if (!r.pts) {
+          trMsg(r.error === 'edge'
+            ? 'Не нашли замкнутую комнату: похоже, нажали снаружи, в стене разрыв или комната обрезана краем картинки. Нажмите в другом месте комнаты или обведите углы вручную.'
+            : 'Не получилось распознать стены на этом плане. Обведите углы вручную — кнопка «Обвести вручную».');
+          return;
+        }
+        t.pts = r.pts.map(function (q) { return [Math.round(q[0] * 10) / 10, Math.round(q[1] * 10) / 10]; });
+        t.closed = true; t.found = true; t.axis = r.axis; t.hov = null;
+        t.sel = 0; for (var i = 1; i < t.pts.length; i++) if (wallPx(i) > wallPx(t.sel)) t.sel = i;
+        trMsg(''); t.h.rec(); drawTrace(); traceUI(); $('mlp-tlen').focus();
+      }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет или обведите углы вручную.'); })
+      .then(function () { t.busy = false; if (tr === t) cv.style.cursor = 'crosshair'; });
+  }
   function trTap(s, idx) {
+    if (!tr.closed && tr.auto && !tr.pts.length) { autoFind(trI(s)); return; }
     trMsg('');
     if (tr.closed) {
       var w = trHitWall(s); if (w < 0) return;
@@ -927,7 +956,8 @@
       if (e.target.closest('#mlp-tdone')) { finishTrace(); return; }
       if (e.target.closest('#mlp-tundo')) { tr.h.undo(); return; }
       if (e.target.closest('#mlp-tredo')) { tr.h.redo(); return; }
-      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
+      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
+      if (e.target.closest('#mlp-tmode')) { tr.auto = !tr.auto; trMsg(''); traceUI(); return; }
       if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
     }
     var del = e.target.closest('[data-del]');

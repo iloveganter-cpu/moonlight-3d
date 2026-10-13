@@ -106,7 +106,8 @@
         '<div class="tbar" id="mlp-tbar" hidden><div id="mlp-tstep"></div><div class="tools">' +
           '<span class="tlen" id="mlp-tlenrow"><input id="mlp-tlen" type="number" min="0.3" step="0.01" inputmode="decimal" placeholder="Длина"> м</span>' +
           '<button type="button" class="btn small" id="mlp-tdone">Готово</button>' +
-          '<button type="button" class="btn small ghost" id="mlp-tundo">Отменить точку</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-tundo" title="Ctrl+Z">Отменить</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-tredo" title="Ctrl+Y">Вернуть</button>' +
           '<button type="button" class="btn small ghost" id="mlp-treset">Заново</button>' +
           '<button type="button" class="btn small ghost" id="mlp-tquit">Выйти</button>' +
           '<label><input type="checkbox" id="mlp-tortho" checked> Прямые углы</label></div>' +
@@ -115,7 +116,9 @@
         '<canvas id="mlp-cv" aria-label="План комнаты с картой освещённости"></canvas>' +
         '<div id="mlp-3d" class="v3d" hidden><div class="v3d-msg" id="mlp-3dmsg">Загружаем 3D…</div></div>' +
         '<div class="legend" id="mlp-legend"><span>лк</span><div style="flex:1;min-width:160px"><div class="bar" id="mlp-bar"></div><div class="ticks" id="mlp-ticks"></div></div></div>' +
-        '<div class="tools" id="mlp-tools2d"><button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
+        '<div class="tools" id="mlp-tools2d"><button type="button" class="btn small ghost" id="mlp-undo" title="Ctrl+Z" disabled>Отменить</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-redo" title="Ctrl+Y" disabled>Вернуть</button>' +
+          '<button type="button" class="btn small ghost" id="mlp-auto">Расставить автоматически</button>' +
           '<label><input type="checkbox" id="mlp-iso" checked> Линии равной освещённости</label>' +
           '<label id="mlp-bgrow" hidden><input type="checkbox" id="mlp-bgshow" checked> План-подложка</label></div>' +
         '<div class="tools" id="mlp-tools3d" hidden><div class="seg two"><button type="button" data-m3="real" class="on">Как будет выглядеть</button><button type="button" data-m3="map">Карта люксов</button></div>' +
@@ -132,6 +135,16 @@
   function num(v) { v = parseFloat(String(v).replace(',', '.')); return isFinite(v) ? v : 0; }
   function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : (m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c); }
   function fmt(v, d) { return (+v).toLocaleString('ru-RU', { maximumFractionDigits: d || 0 }); }
+  // История для «Отменить / Вернуть»: снимок после каждого изменения, key — для сравнения
+  function Hist(get, set) {
+    var a = [], i = -1;
+    return {
+      rec: function () { var s = get(); if (i >= 0 && a[i].key === s.key) return; a = a.slice(0, i + 1); a.push(s); if (a.length > 150) a.shift(); i = a.length - 1; },
+      undo: function () { if (i <= 0) return false; set(a[--i]); return true; },
+      redo: function () { if (i >= a.length - 1) return false; set(a[++i]); return true; },
+      can: function () { return [i > 0, i < a.length - 1]; }
+    };
+  }
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
   // ---------- Комната ----------
@@ -290,8 +303,34 @@
     $('mlp-wa').href = 'https://wa.me/' + WA + '?text=' + encodeURIComponent(waText());
     legend(); draw();
     if (view3d && !fast) refresh3d();
-    if (!fast) { clearTimeout(recT); recT = setTimeout(recommend, 350); }
+    if (!fast) { clearTimeout(recT); recT = setTimeout(recommend, 350); clearTimeout(hT); hT = setTimeout(histRec, 300); }
   }
+
+  // ---------- Отменить / Вернуть (Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z) ----------
+  // Снимок всего состояния после каждого пересчёта (с задержкой, чтобы набор числа был одним шагом).
+  // Картинка плана в снимок не сериализуется — хранится ссылкой.
+  var hT = 0, hist = Hist(function () {
+    return { key: JSON.stringify(st, function (k, v) { return k === 'bg' ? undefined : v; }), bg: st.bg };
+  }, function (s) {
+    var o = JSON.parse(s.key); for (var k in o) st[k] = o[k]; st.bg = s.bg;
+    root.querySelectorAll('.side [data-k]').forEach(function (el) { el.value = st[el.dataset.k]; });
+    $('mlp-iso').checked = st.iso;
+    renderDims(); renderGroups(); update();
+  });
+  function histRec() { if (tr) return; hist.rec(); histUI(); }
+  function histUI() { var c = hist.can(); $('mlp-undo').disabled = !c[0]; $('mlp-redo').disabled = !c[1]; }
+  function histGo(back) {
+    if (tr) { back ? tr.h.undo() : tr.h.redo(); return; }
+    clearTimeout(hT); histRec(); // незаписанное изменение — сначала в историю
+    if (back ? hist.undo() : hist.redo()) { clearTimeout(hT); histUI(); }
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    var z = e.code === 'KeyZ', y = e.code === 'KeyY'; if (!z && !y) return;
+    var t = e.target; if (t && t !== document.body && !root.contains(t)) return; // чужие поля Тильды не трогаем
+    if (!root.getClientRects().length) return;
+    e.preventDefault(); histGo(z && !e.shiftKey);
+  });
 
   // ---------- Рекомендация: сколько светильников нужно в симметричной схеме ----------
   // Если света мало или он неровный — перебираем симметричные варианты для спотов (или предлагаем добавить споты)
@@ -556,6 +595,9 @@
   function startTrace(img) {
     if (view3d) setView('plan');
     tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0 };
+    tr.h = Hist(function () { return { key: JSON.stringify([tr.pts, tr.closed, tr.sel, tr.axis]) }; },
+      function (s) { var o = JSON.parse(s.key); tr.pts = o[0]; tr.closed = o[1]; tr.sel = o[2]; tr.axis = o[3]; tr.hov = null; trMsg(''); drawTrace(); traceUI(); });
+    tr.h.rec();
     $('mlp-tlen').value = ''; $('mlp-tmsg').hidden = true;
     traceUI(); drawTrace();
     root.querySelector('.plan').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -658,7 +700,7 @@
       : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.';
     $('mlp-tlenrow').hidden = $('mlp-tdone').hidden = !tr.closed;
     $('mlp-tdone').disabled = !trMpp();
-    $('mlp-tundo').disabled = !tr.pts.length;
+    var c = tr.h.can(); $('mlp-tundo').disabled = !c[0]; $('mlp-tredo').disabled = !c[1];
   }
   function trDown(e) {
     e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {}
@@ -700,7 +742,7 @@
     tp.mode = null;
     if (mode === 'tap' && e.type === 'pointerup') trTap(tp.start, tp.idx);
     if (mode === 'drag' && tr.closed && !M.isSimple(tr.pts)) trMsg('Стены пересекаются — передвиньте точку.');
-    drawTrace(); traceUI();
+    tr.h.rec(); drawTrace(); traceUI();
   }
   function trTap(s, idx) {
     trMsg('');
@@ -723,12 +765,7 @@
     var i = trHitPt(scr(e)); if (i < 0 || (tr.closed && tr.pts.length <= 3)) return;
     tr.pts.splice(i, 1); if (tr.pts.length < 2) tr.axis = null;
     if (tr.sel >= tr.pts.length) tr.sel = 0;
-    drawTrace(); traceUI();
-  }
-  function trUndo() {
-    if (tr.closed) { tr.closed = false; tr.sel = -1; }
-    else { tr.pts.pop(); if (tr.pts.length < 2) tr.axis = null; }
-    trMsg(''); drawTrace(); traceUI();
+    tr.h.rec(); drawTrace(); traceUI();
   }
   function finishTrace() {
     var mpp = trMpp(); if (!mpp) return;
@@ -766,11 +803,14 @@
     if (e.target.closest('#mlp-rec-go')) { if (recApply) recApply(); return; }
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
+    if (e.target.closest('#mlp-undo')) { histGo(true); return; }
+    if (e.target.closest('#mlp-redo')) { histGo(false); return; }
     if (e.target.closest('#mlp-trace')) { $('mlp-file').click(); return; }
     if (tr) {
       if (e.target.closest('#mlp-tdone')) { finishTrace(); return; }
-      if (e.target.closest('#mlp-tundo')) { trUndo(); return; }
-      if (e.target.closest('#mlp-treset')) { startTrace(tr.img); return; }
+      if (e.target.closest('#mlp-tundo')) { tr.h.undo(); return; }
+      if (e.target.closest('#mlp-tredo')) { tr.h.redo(); return; }
+      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
       if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
     }
     var del = e.target.closest('[data-del]');
@@ -883,5 +923,6 @@
 
   st.poly = makePoly(); addGroup('pendant'); addGroup('spot');
   renderDims(); renderGroups(); legend(); update();
+  clearTimeout(hT); histRec(); // исходное состояние — первая точка истории
   window.MLPlanner = { state: st, update: update, result: function () { return res; }, trace: function () { return tr; }, startTrace: startTrace }; // для отладки
 })();

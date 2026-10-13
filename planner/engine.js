@@ -308,7 +308,7 @@
     if (n <= 0) return [];
     opt = opt || {};
     if (mount === 'wall') return layoutWall(poly, n, opt.wallOffset || 0.08);
-    var sym = symLayout(poly, n, opt);
+    var sym = opt.exact ? null : symLayout(poly, n, opt); // exact — ровно n, без подгонки под симметрию
     return sym ? sym.pts : layoutCVT(poly, n, (opt.fixed || []).filter(function (p) { return inside(p[0], p[1], poly); }));
   }
 

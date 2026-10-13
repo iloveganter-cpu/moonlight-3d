@@ -73,6 +73,8 @@
     '.mlp .verdict.good{background:#e8f5e9}.mlp .verdict.warn{background:#fff3e0}.mlp .verdict.bad{background:#ffebee}' +
     '.mlp .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}' +
     '.mlp .note{font-size:12px;color:var(--mute);margin-top:12px}' +
+    '.mlp .symrec{margin:0 0 18px;padding:12px 16px;border-radius:8px;background:#fff3e0;border:1px solid #ffb74d;font-size:15px;display:flex;flex-direction:column;gap:10px}' +
+    '.mlp .symrec div{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.mlp .symrec span{flex:1;min-width:220px}' +
     '.mlp .tbar{background:#fff;border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:14px}.mlp .tbar .tools{margin-top:8px}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
@@ -83,6 +85,7 @@
   root.innerHTML = '<style>' + css + '</style>' +
     '<h2>Планировщик освещения<span class="beta">бета</span></h2>' +
     '<p class="sub">Нарисуйте комнату, расставьте светильники — карта покажет, где светло, а где темно.</p>' +
+    '<div class="symrec" id="mlp-symrec" hidden></div>' +
     '<div class="wrap"><div class="side">' +
       '<div class="card"><h3>Помещение</h3>' +
         '<div class="seg" id="mlp-shape">' + SHAPES.map(function (s) { return '<button type="button" data-shape="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
@@ -202,26 +205,30 @@
     if (!isMain(g)) st.groups.forEach(function (o) { if (o !== g && M.TYPES[o.type].mount !== 'wall') fixed = fixed.concat(o.pos); });
     return fixed;
   }
-  // Симметричная схема по зонам комнаты; если ровно столько светильников симметрично не встаёт —
-  // ставим ближайшее симметричное количество (больше) и пишем об этом в карточке группы
+  // Симметричная схема по зонам комнаты. Если ровно столько светильников симметрично не встаёт — количество
+  // клиента не меняем: расставляем его равномерно по площади, а над планировщиком показываем рекомендацию
+  // (ближайшее симметричное число и соседнее с другой стороны) с кнопками «Поставить N».
   function relayout(g) {
-    var n = Math.max(0, Math.round(g.count)), poly = makePoly(); g.note = '';
+    var n = Math.max(0, Math.round(g.count)), poly = makePoly(); g.note = ''; g.alt = null;
     if (M.TYPES[g.type].mount === 'wall' || n === 0) { g.pos = M.layout(poly, n, M.TYPES[g.type].mount); return; }
     var sym = M.symLayout(poly, n, { fixed: fixedFor(g) });
     if (!sym) { g.pos = M.layout(poly, n, 'ceiling', { fixed: fixedFor(g) }); g.note = 'Стены не под прямым углом — расставлено равномерно по площади.'; return; }
     g.pos = sym.pts;
     if (sym.n !== n) {
-      var around = sym.options.filter(function (k) { return Math.abs(k - n) <= Math.max(3, n * 0.5); });
-      g.note = 'Ровно ' + n + ' симметрично не встаёт — поставлено ' + sym.n + '. Аккуратные варианты: ' + around.join(', ') + '.';
-      g.count = sym.n;
+      var opts = sym.options || [], other = sym.n > n ? opts.filter(function (k) { return k < n; }).pop() : opts.filter(function (k) { return k > n; })[0];
+      g.alt = { n: n, best: sym.n, other: other || 0 };
+      g.pos = M.layout(poly, n, 'ceiling', { fixed: fixedFor(g), exact: true });
+      g.note = 'Расставлено равномерно, без строгой симметрии — рекомендация вверху.';
     }
   }
-  // Стрелки в поле «Сколько шт.» — сразу к следующему симметричному варианту
-  function stepCount(g, dir) {
-    var sym = M.symLayout(makePoly(), Math.max(1, g.count), { fixed: fixedFor(g) });
-    if (!sym || !sym.options) return g.count + dir;
-    var o = sym.options.filter(function (k) { return dir > 0 ? k > g.count : k < g.count; });
-    return o.length ? (dir > 0 ? o[0] : o[o.length - 1]) : (dir > 0 ? g.count + 1 : Math.max(0, g.count - 1));
+  // Плашка над планировщиком: какие группы не встают симметрично и сколько поставить
+  function symBanner() {
+    var box = $('mlp-symrec'), rows = st.groups.filter(function (g) { return g.alt && g.alt.n === g.count && g.pos.length; }).map(function (g) {
+      var a = g.alt, name = M.TYPES[g.type].name.toLowerCase(), btn = function (k) { return '<button type="button" class="btn small" data-symset="' + g.id + ':' + k + '">Поставить ' + k + '</button>'; };
+      return '<div><span><b>Группа ' + letterOf(g) + ' (' + esc(name) + '):</b> ' + a.n + ' шт. не встают симметрично — сейчас расставлены равномерно. ' +
+        'Для ровной симметричной схемы рекомендуем <b>' + a.best + '</b>' + (a.other ? ' или ' + a.other : '') + '.</span>' + btn(a.best) + (a.other ? btn(a.other).replace('btn small', 'btn small ghost') : '') + '</div>';
+    });
+    box.innerHTML = rows.join(''); box.hidden = !rows.length;
   }
   function relayoutAll() {
     st.groups.forEach(function (g) { g.pos = []; });
@@ -273,6 +280,7 @@
     res = M.compute({ poly: poly, H: st.H, wp: st.wp, refl: REFL[st.refl][1], kz: KZ[st.kz][1] }, lumsAll(), { fast: !!fast });
     if ($('mlp-area')) $('mlp-area').textContent = fmt(res.area, 1) + ' м²';
     $('mlp-bgrow').hidden = !(st.bg && st.shape === 'custom');
+    symBanner();
     // Предупреждения о том, что не попало в расчёт
     var warn = [], W = 0;
     if (st.H <= st.wp + 0.1) warn.push('Высота потолка меньше рабочей поверхности — проверьте размеры.');
@@ -371,7 +379,7 @@
       recApply = function () {
         var g = tg;
         if (isNew) { addGroup('spot'); g = st.groups[st.groups.length - 1]; }
-        g.count = N; g.pos = found.c.pts.map(function (p) { return p.slice(); }); g.note = '';
+        g.count = N; g.pos = found.c.pts.map(function (p) { return p.slice(); }); g.note = ''; g.alt = null;
         renderGroups(); update();
       };
     } else if (last && last.r.avg < st.E) {
@@ -804,6 +812,12 @@
     if (e.target.closest('#mlp-add')) { addGroup(st.groups.length ? 'spot' : 'pendant'); renderGroups(); update(); return; }
     if (e.target.closest('#mlp-auto')) { relayoutAll(); return; }
     if (e.target.closest('#mlp-undo')) { histGo(true); return; }
+    var sb = e.target.closest('[data-symset]');
+    if (sb) {
+      var v = sb.dataset.symset.split(':'), sg = st.groups.filter(function (x) { return x.id === +v[0]; })[0];
+      if (sg) { sg.count = +v[1]; relayout(sg); renderGroups(); update(); }
+      return;
+    }
     if (e.target.closest('#mlp-redo')) { histGo(false); return; }
     if (e.target.closest('#mlp-trace')) { $('mlp-file').click(); return; }
     if (tr) {
@@ -836,9 +850,8 @@
       if (f === 'mode') { g.mode = t.value; renderGroups(); update(); return; }
       if (f === 'count') {
         var v = Math.max(0, Math.min(60, Math.round(num(t.value))));
-        if (e.type === 'input' && Math.abs(v - g.count) === 1 && M.TYPES[g.type].mount !== 'wall') v = stepCount(g, v - g.count); // стрелки
         g.count = v; relayout(g);
-        if (e.type === 'change' || Math.abs(g.count - v) === 0) t.value = g.count; // при наборе с клавиатуры поле правим по выходу
+        if (e.type === 'change') t.value = g.count;
         var nt = t.closest('.grp').querySelector('[data-note]'); if (nt) { nt.textContent = g.note || ''; nt.hidden = !g.note; }
         update(); return;
       }

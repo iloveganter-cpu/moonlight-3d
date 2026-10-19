@@ -3,7 +3,8 @@
       контуры комнат к краям на листе освещения по карте расстояний (цветные линии светильников не учитываем);
    2) auto: уверенные группы одинаковых значков (красные, оранжевые, розовые — так обычно рисуют свет);
    3) byClick: клиент нажал на значок — находим все такие же по цвету и форме (и повёрнутые на 90°).
-   Координаты — пиксели картинки листа освещения. window.MLPFix = { register, auto, byClick }. */
+   4) spec: таблица спецификации светильников из текста листа — для сверки «по таблице / отмечено».
+   Координаты — пиксели картинки листа освещения. window.MLPFix = { spec, register, sheets, auto, byClick }. */
 (function () {
   'use strict';
 
@@ -13,7 +14,7 @@
     var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
     return { d: x.getImageData(0, 0, w, h).data, w: w, h: h, k: k };
   }
-  var cache = { img: null, P: null };
+  var cache = { img: null, P: null }, MIN_SIM = 0.72; // порог сходства с образцом (проверено на листах Восхода: значки ≥0.7, мусор ниже)
   function full(img) { if (cache.img !== img) { cache.img = img; cache.P = pixels(img, 0); } return cache.P; }
 
   // ---------- Совмещение листов ----------
@@ -160,27 +161,30 @@
     return o;
   }
   // Совпадение с допуском 1 px: какая доля шаблона нашлась рядом (полнота) и какая доля найденного легла на шаблон
-  // (точность), итог — их среднее гармоническое. Значки, перечёркнутые линиями по-разному, так находятся надёжнее
-  function match(m, w, h, tpls, minF) {
+  // (точность), итог — их среднее гармоническое. Значки, перечёркнутые линиями по-разному, так находятся надёжнее.
+  // occ — чужие линии (размерные, провода): точка шаблона под ними «не видна» и в полноту не идёт, но видно
+  // должно быть не меньше половины значка
+  function match(m, w, h, tpls, minF, occ) {
     var S = integral(m, w, h), W1 = w + 1, hits = [], md = dilate(m, w, h);
     tpls.forEach(function (T) {
       var tw = T.w, th = T.h, td = dilate(T.t, tw, th), bw = Math.max(3, Math.round(0.35 * Math.max(tw, th)));
       var st = tw * th > 900 ? 2 : 1; // крупный шаблон — шаг 2 px, точность хватает
       for (var y = 0; y + th <= h; y += st) for (var x = 0; x + tw <= w; x += st) {
         var n = S[(y + th) * W1 + x + tw] - S[y * W1 + x + tw] - S[(y + th) * W1 + x] + S[y * W1 + x];
-        if (n < 0.45 * T.n || n > 2.2 * T.n) continue;
+        if (n < (occ ? 0.3 : 0.45) * T.n || n > 2.2 * T.n) continue;
         // значок стоит отдельно: в кольце вокруг почти нет того же цвета (иначе это кусок линии подсветки или заливки)
         var bx0 = Math.max(0, x - bw), by0 = Math.max(0, y - bw), bx1 = Math.min(w, x + tw + bw), by1 = Math.min(h, y + th + bw);
         var ring = S[by1 * W1 + bx1] - S[by0 * W1 + bx1] - S[by1 * W1 + bx0] + S[by0 * W1 + bx0] - n, ra = (bx1 - bx0) * (by1 - by0) - tw * th;
         if (ring > 0.12 * ra) continue;
-        var rec = 0, pre = 0;
+        var rec = 0, pre = 0, hid = 0;
         for (var v = 0; v < th; v++) {
           var o = (y + v) * w + x, to = v * tw;
-          for (var u = 0; u < tw; u++) { if (T.t[to + u] && md[o + u]) rec++; if (m[o + u] && td[to + u]) pre++; }
+          for (var u = 0; u < tw; u++) { if (T.t[to + u]) { if (md[o + u]) rec++; else if (occ && occ[o + u]) hid++; } if (m[o + u] && td[to + u]) pre++; }
         }
-        rec /= T.n; pre /= n;
+        if (hid > 0.5 * T.n) continue;
+        rec = (rec + 0.5 * hid) / T.n; pre /= n; // закрытое — наполовину найдено
         var f = 2 * rec * pre / (rec + pre || 1);
-        if (f >= minF) hits.push({ x: x + tw / 2, y: y + th / 2, s: f, r: Math.max(tw, th) });
+        if (f >= minF) hits.push({ x: x + tw / 2, y: y + th / 2, s: f, r: Math.max(tw, th), T: T, x0: x, y0: y });
       }
     });
     hits.sort(function (a, b) { return b.s - a.s; });
@@ -199,6 +203,123 @@
       else if (s < 40 && (r + g + b) / 3 < dark) m[i] = 1;
     }
     return m;
+  }
+  // Чужие линии поверх значков: тёмные серые/чёрные (размеры, выноски) и яркие другого оттенка (провода),
+  // с запасом 1 px на сглаживание
+  function occMask(P, c, m) {
+    var d = P.d, w = P.w, h = P.h, N = w * h, o = new Uint8Array(N), h0 = hueOf(c[0], c[1], c[2]), col = Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) >= 40;
+    for (var i = 0; i < N; i++) {
+      if (m[i]) continue;
+      var r = d[4 * i], g = d[4 * i + 1], b = d[4 * i + 2], mx = Math.max(r, g, b), s = mx - Math.min(r, g, b);
+      if ((r + g + b) / 3 < 110 || (s < 40 && (r + g + b) / 3 < 120)) { o[i] = 1; continue; } // и тёмная смесь с цветом значка
+      if (col && s >= 40 && mx >= 70) { var dh = Math.abs(hueOf(r, g, b) - h0); if (Math.min(dh, 360 - dh) > 40) o[i] = 1; } // и смесь цветов на стыке
+    }
+    o = dilate(o, w, h);
+    for (i = 0; i < N; i++) if (m[i]) o[i] = 0; // цвет значка рядом с линией — виден
+    return o;
+  }
+  // Проверка по картинке, а не по маске: мелкий значок (кольцо с крестом в 10-12 px) маской почти сплошной и похож
+  // на кусок линии или букву. Канал «сколько тут цвета значка» со сглаживанием → сравнение с образцом (sim) по точкам,
+  // не закрытым чужими линиями. Образец — среднее по уверенным находкам: каждая перечёркнута по-своему, в сумме
+  // значок виден целиком
+  function chan(P, c) {
+    var d = P.d, N = P.w * P.h, o = new Float32Array(N), h0 = hueOf(c[0], c[1], c[2]), col = Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) >= 40;
+    for (var i = 0; i < N; i++) {
+      var r = d[4 * i], g = d[4 * i + 1], b = d[4 * i + 2], mx = Math.max(r, g, b), s = mx - Math.min(r, g, b);
+      if (col) { if (s >= 20) { var dh = Math.abs(hueOf(r, g, b) - h0); if (Math.min(dh, 360 - dh) <= 30) o[i] = s; } }
+      else if (s < 40) o[i] = 255 - (r + g + b) / 3;
+    }
+    // лёгкое размытие 3×3: линии в 1 px со сдвигом на полпикселя всё ещё совпадают
+    var w = P.w, h = P.h, t = new Float32Array(N), x, y;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { var j = y * w + x; t[j] = (o[j] * 2 + (x > 0 ? o[j - 1] : o[j]) + (x < w - 1 ? o[j + 1] : o[j])) / 4; }
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { var k = y * w + x; o[k] = (t[k] * 2 + (y > 0 ? t[k - w] : t[k]) + (y < h - 1 ? t[k + w] : t[k])) / 4; }
+    return o;
+  }
+  function patch(C, occ, w, h, cx, cy, E) {
+    var n = 2 * E + 1, v = new Float32Array(n * n), k = new Uint8Array(n * n);
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) {
+      var X = cx - E + x, Y = cy - E + y; if (X < 0 || Y < 0 || X >= w || Y >= h) continue;
+      var i = Y * w + X; if (occ && occ[i]) continue; v[y * n + x] = C[i]; k[y * n + x] = 1;
+    }
+    return { v: v, k: k, n: n };
+  }
+  function prot(p) { var n = p.n, v = new Float32Array(n * n), k = new Uint8Array(n * n); for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) { v[x * n + (n - 1 - y)] = p.v[y * n + x]; k[x * n + (n - 1 - y)] = p.k[y * n + x]; } return { v: v, k: k, n: n }; }
+  // «Чернила» образца (кольцо, крест) должны быть на месте, «просветы» между ними — пусты; считаем только видимое.
+  // Итог — меньшее из двух долей; закрыто больше 60 % чернил — не судим
+  function sim(a, b) {
+    var N = a.n * a.n, A = 0, i;
+    for (i = 0; i < N; i++) if (a.k[i] && a.v[i] > A) A = a.v[i];
+    if (!A) return -1;
+    // чернила — по четвертям вокруг центра: полукруг (бра) или точка в коробке совпадают только с одной стороны
+    var ink = 0, inkV = 0, gap = 0, gapOk = 0, qv = [0, 0, 0, 0], qo = [0, 0, 0, 0], c = (a.n - 1) / 2;
+    for (i = 0; i < N; i++) {
+      if (!a.k[i]) continue; var t = a.v[i];
+      if (t > 0.3 * A) {
+        ink++; if (!b.k[i]) continue; inkV++;
+        var x = i % a.n - c, y = Math.floor(i / a.n) - c; if (!x && !y) continue;
+        var q = (x >= 0 ? 0 : 1) + (y >= 0 ? 0 : 2); qv[q]++; if (b.v[i] > 0.5 * t) qo[q]++;
+      } else if (t < 0.1 * A && b.k[i]) { gap++; if (b.v[i] < 0.2 * A) gapOk++; }
+    }
+    if (inkV < 0.4 * ink || !gap) return -1;
+    var qn = 0, qm = 1; for (q = 0; q < 4; q++) if (qv[q] >= 3) { qn++; qm = Math.min(qm, qo[q] / qv[q]); }
+    if (qn < 3) return -1;
+    return Math.min(qm, gapOk / gap);
+  }
+  // лучшее совпадение со сдвигом до ±3 px; p.x/p.y уточняются
+  function score(C, occ, w, h, refs, p, E) {
+    var bs = -1, bx = p.x, by = p.y, x0 = Math.round(p.x), y0 = Math.round(p.y);
+    for (var dy = -3; dy <= 3; dy++) for (var dx = -3; dx <= 3; dx++) {
+      var q = patch(C, occ, w, h, x0 + dx, y0 + dy, E);
+      refs.forEach(function (r) { var s = sim(r, q); if (s > bs) { bs = s; bx = x0 + dx; by = y0 + dy; } });
+    }
+    return { x: bx, y: by, s: bs, r: p.r };
+  }
+  function ringRef(n, r, L) {
+    var v = new Float32Array(n * n), k = new Uint8Array(n * n), c = (n - 1) / 2;
+    for (var y = 0; y < n; y++) for (var x = 0; x < n; x++) {
+      var d = Math.hypot(x - c, y - c), i = y * n + x;
+      if (Math.abs(d - r) <= 0.75) { v[i] = L; k[i] = 1; } else if (d >= r + 2 && d <= r + 3.5) k[i] = 1;
+    }
+    return { v: v, k: k, n: n };
+  }
+  function verify(P, sc, occ, hits, ref, E, rot) {
+    var C = chan(P, sc), w = P.w, h = P.h, n = ref.n, c = (n - 1) / 2, refs = rot ? [ref, prot(ref)] : [ref], S;
+    function mean(good, sx, sy) {
+      var sum = new Float32Array(n * n), cnt = new Float32Array(n * n), M = { v: new Float32Array(n * n), k: new Uint8Array(n * n), n: n }, kn = 0;
+      good.forEach(function (p) { var q = patch(C, occ, w, h, p.x + sx, p.y + sy, E); for (var i = 0; i < n * n; i++) if (q.k[i]) { sum[i] += q.v[i]; cnt[i]++; } });
+      for (var i = 0; i < n * n; i++) if (cnt[i] >= 2) { M.v[i] = sum[i] / cnt[i]; M.k[i] = 1; kn++; }
+      return kn > 0.8 * n * n ? M : null;
+    }
+    // Начальный образец — самый «типичный» из нажатого и колец разного радиуса: тот, на который больше всего похожи
+    // находки (значков на листе десятки, а мусора одного вида — единицы). Кольцо проверяет только обод и пустой
+    // пояс вокруг, середину не смотрит — размерные линии и засечки через центр значка ему не мешают
+    var L = 0, i; for (i = 0; i < n * n; i++) if (ref.k[i] && ref.v[i] > L) L = ref.v[i];
+    var cands = [ref];
+    for (var rr0 = 3; rr0 <= E - 4; rr0 += 0.5) cands.push(ringRef(n, rr0, L));
+    var bestT = -1, ring = null;
+    cands.forEach(function (r) {
+      var rr = rot ? [r, prot(r)] : [r], s = hits.map(function (p) { return score(C, occ, w, h, rr, p, E).s; }).sort(function (a, b) { return b - a; });
+      var top = s.slice(1, 31), t = top.reduce(function (a, b) { return a + b; }, 0) / (top.length || 1);
+      if (window.__fixdbg) (window.__fixdbg.seed = window.__fixdbg.seed || []).push(+t.toFixed(2));
+      if (t > bestT) { bestT = t; refs = rr; ring = r === ref ? null : rr; }
+    });
+    // образец уточняем три раза: среднее по лучшим находкам (без повёрнутых, чтобы не смешивать), центр — по
+    // «центру масс» значка: у образца с нажатия центр часто закрыт размерами и съезжает
+    [0.6, 0.7, 0.75].forEach(function (thr) {
+      S = hits.map(function (p) { return score(C, occ, w, h, refs, p, E); });
+      var good = S.filter(function (p) { return p.s >= thr && (!rot || sim(refs[0], patch(C, occ, w, h, p.x, p.y, E)) >= p.s - 0.05); });
+      if (good.length < 3) return;
+      var M = mean(good, 0, 0); if (!M) return;
+      var A = 0, mx = 0, my = 0, ms = 0, i; for (i = 0; i < n * n; i++) if (M.v[i] > A) A = M.v[i];
+      for (i = 0; i < n * n; i++) if (M.v[i] > 0.3 * A) { mx += (i % n) * M.v[i]; my += Math.floor(i / n) * M.v[i]; ms += M.v[i]; }
+      var sx = Math.round(mx / ms - c), sy = Math.round(my / ms - c);
+      if (sx || sy) M = mean(good, sx, sy) || M;
+      refs = rot ? [M, prot(M)] : [M];
+    });
+    S = hits.map(function (p) { var a = score(C, occ, w, h, refs, p, E); if (ring) a.s = Math.min(a.s, score(C, occ, w, h, ring, a, E).s); return a; }); // кольцо — ещё и фильтр: обод целиком, пояс вокруг пуст
+    if (window.__fixdbg) { var R0 = refs[0], A0 = 0; for (var z = 0; z < n * n; z++) if (R0.v[z] > A0) A0 = R0.v[z]; window.__fixdbg.M = []; for (var yy = 0; yy < n; yy++) { var row = ''; for (var xx = 0; xx < n; xx++) { var zz = yy * n + xx; row += R0.k[zz] ? ' .:-=+*#%@'[Math.min(9, Math.floor(9.99 * R0.v[zz] / A0))] : 'X'; } window.__fixdbg.M.push(row); } }
+    window.__fixdbg && (window.__fixdbg.sc = S.map(function (p) { return [p.x, p.y, +p.s.toFixed(2)]; }));
+    return S;
   }
   // Пунктир (шинопровод, лента) — цепочка из 3 и больше одинаковых кусков почти вплотную на одной линии; убираем.
   // Пары (двойной спот) и одиночные значки остаются
@@ -255,8 +376,19 @@
     if (bx1 < bx0) return null;
     cand = { x0: bx0, y0: by0, x1: bx1, y1: by1, w: bx1 - bx0 + 1, h: by1 - by0 + 1 };
     if (cand.w > R * 1.9 || cand.h > R * 1.9) return null; // слилось с линией или заливкой — это не значок
-    var T = crop(m, w, cand), tpls = [T]; if (T.w !== T.h) tpls.push(rot90(T));
-    var hits = dropChains(match(m, w, h, tpls, 0.72), Math.max(T.w, T.h));
+    var T = crop(m, w, cand), tpls = [T], hits; if (T.w !== T.h) tpls.push(rot90(T));
+    // мелкий круглый или квадратный значок (спот) маской почти сплошной — его проверяем по картинке, с поправкой на
+    // чужие линии; крупные и вытянутые значки маска различает и так
+    if (Math.max(T.w, T.h) <= 1.3 * Math.min(T.w, T.h) && Math.max(T.w, T.h) <= 0.24 * ppm) {
+      var occ = occMask(P, sc, m), E = Math.ceil(Math.max(T.w, T.h) / 2) + 3;
+      hits = match(m, w, h, tpls, 0.6, occ);
+      if (window.__fixdbg) { window.__fixdbg.T1 = [T.w, T.h, T.n]; window.__fixdbg.n1 = hits.length; }
+      var ref = patch(chan(P, sc), occ, w, h, Math.round((cand.x0 + cand.x1) / 2), Math.round((cand.y0 + cand.y1) / 2), E), ded = [];
+      verify(P, sc, occ, hits, ref, E, T.w !== T.h).filter(function (p) { return p.s >= MIN_SIM; }).sort(function (a, b) { return b.s - a.s; })
+        .forEach(function (p) { if (!ded.some(function (q) { return Math.hypot(q.x - p.x, q.y - p.y) < 0.8 * p.r; })) ded.push(p); });
+      hits = ded;
+    } else hits = match(m, w, h, tpls, 0.72);
+    hits = dropChains(hits, Math.max(T.w, T.h));
     return group(hits, T, sc, Math.sqrt(cand.w * cand.h) > 0.24 * ppm ? 'pendant' : 'spot'); // по площади: вытянутый спот не люстра
   }
 
@@ -355,5 +487,40 @@
         }
     return { s: R[0] * base, tx: R[1] / F.k, ty: R[2] / F.k, score: bf, fwd: best, rev: rn ? rv / rn : 6 };
   }
-  window.MLPFix = { register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist } };
+  // ---------- Спецификация на листе ----------
+  // Таблица «Наименование … Кол-во, шт»: числа в столбце под заголовком количества, название — слова той же строки
+  // левее (у многострочного названия число посередине). items: [{s, x, y, h}] в единицах страницы, y вниз.
+  // Итог: [{name, n, kind}], kind — spot / pendant / wall / ceiling / linear (ленты, линейные треки) / other
+  function specKind(t) {
+    t = t.toLowerCase();
+    if (/линейн|лент|профил/.test(t)) return 'linear';
+    if (/бра\b|настен/.test(t)) return 'wall';
+    if (/люстр|подвес/.test(t)) return 'pendant';
+    if (/плафон|накладн|потолочн/.test(t)) return 'ceiling';
+    if (/встраив|точечн|спот|софит|трек|downlight/.test(t)) return 'spot';
+    return 'other';
+  }
+  function spec(items) {
+    items = items.map(function (o) {
+      return { s: String(o.s).replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).trim(), x: o.x, y: o.y, h: o.h || 10 };
+    }).filter(function (o) { return o.s; });
+    var out = [];
+    items.filter(function (o) { return /кол[-\s.]*во|количеств/i.test(o.s); }).forEach(function (H) {
+      var tol = 1.3 * H.h, nums = items.filter(function (o) { return /^\d{1,3}$/.test(o.s) && o.y > H.y + 0.5 * H.h && o.y < H.y + 60 * H.h && Math.abs(o.x - H.x) < 4 * H.h; })
+        .sort(function (a, b) { return a.y - b.y; });
+      var rows = nums.map(function (o) { return { o: o, w: [] }; });
+      items.forEach(function (o) {
+        if (/^\d{1,3}$/.test(o.s) || o.x > H.x - 0.5 * H.h || o.x < H.x - 25 * H.h) return; // соседние таблицы не берём
+        var best = null, bd = tol; rows.forEach(function (r) { var d = Math.abs(o.y - r.o.y); if (d <= bd) { bd = d; best = r; } });
+        if (best) best.w.push(o);
+      });
+      rows.forEach(function (r) {
+        if (!r.w.length) return;
+        var name = r.w.sort(function (a, b) { return Math.abs(a.y - b.y) > 0.5 * H.h ? a.y - b.y : a.x - b.x; }).map(function (o) { return o.s; }).join(' ').replace(/\s+/g, ' ');
+        if (name.length <= 90) out.push({ name: name, n: +r.o.s, kind: specKind(name) });
+      });
+    });
+    return out;
+  }
+  window.MLPFix = { spec: spec, register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist, full: full, chan: chan, patch: patch, sim: sim, occMask: occMask, colorMask: colorMask } };
 })();

@@ -86,6 +86,7 @@
     '.mlp .rtabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}' +
     '.mlp .rtabs button{height:34px;padding:0 12px;border:1px solid #ccc;border-radius:17px;background:#fff;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;color:#000}' +
     '.mlp .rtabs button.on{background:#000;color:#fff;border-color:#000}.mlp .rtabs button.add{border-style:dashed}.mlp .rtabs .rx{margin-left:2px;opacity:.7;font-size:16px;line-height:1}' +
+    '.mlp .rtabs button.hot{border:2px solid #ff6d00;color:#a14a00;font-weight:600}.mlp .rthint{flex-basis:100%;font-size:13px;color:#8a5a00;background:#fff3e0;border-radius:6px;padding:6px 8px}' +
     '.mlp .mk{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.mlp .mk.good{background:#2e7d32}.mlp .mk.warn{background:#ef6c00}.mlp .mk.bad{background:#c62828}' +
     '.mlp .apt{width:100%;border-collapse:collapse;font-size:13px}.mlp .apt td,.mlp .apt th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.mlp .apt td:first-child,.mlp .apt th:first-child{text-align:left}' +
     '.mlp .apt th{font-weight:400;color:var(--mute);font-size:12px}.mlp .apt tr[data-ri]{cursor:pointer}.mlp .apt tr[data-ri]:hover{background:var(--soft)}.mlp .apt tfoot td{font-weight:600;border-bottom:0}' +
@@ -464,7 +465,11 @@
         (on && rooms.length > 1 ? '<span class="rx" data-rdel title="Удалить комнату">×</span>' : '') + '</button>';
     });
     h += '<button type="button" class="add" data-rt="add">+ Добавить комнату</button>';
-    if (planImg()) h += '<button type="button" class="add" data-rt="fix">Светильники из проекта</button>';
+    var pi = planImg(), fromProj = rooms.some(function (r) { return r.groups.some(function (g) { return g.fixed; }); });
+    // план — лист освещения, а в комнатах ещё типовая расстановка: подсказываем взять светильники с листа
+    var hot = pi && pi._pdf && pi._pdf.lit && !fromProj;
+    if (pi) h += '<button type="button" class="add' + (hot ? ' hot' : '') + '" data-rt="fix">Светильники из проекта</button>';
+    if (hot) h += '<div class="rthint">На плане нарисованы светильники проекта, а в комнатах сейчас типовая расстановка. Нажмите «Светильники из проекта» — поставим их как в проекте.</div>';
     box.innerHTML = h;
   }
   // Новая комната: общие параметры квартиры — как у текущей, тип — первый ещё не занятый
@@ -1340,6 +1345,7 @@
     return null;
   }
   function fxAdd(t, g, on) {
+    g.sheet = g.pts.length; // на всём листе — для сверки со спецификацией (она на всю квартиру)
     g.pts = g.pts.filter(function (p) { return fxWhere(t, p); });
     if (!g.pts.length) return 0;
     // эти же значки уже найдены другой группой — та группа заменяется новой
@@ -1370,7 +1376,7 @@
       if (!g.on || g.type === 'off') continue;
       for (var i = 0; i < g.pts.length; i++) {
         var q = trS(g.pts[i]);
-        if (Math.abs(q[0] - s[0]) <= rr && Math.abs(q[1] - s[1]) <= rr) { g.pts.splice(i, 1); if (!g.pts.length) F.groups.splice(j, 1); trMsg(''); traceUI(); drawTrace(); return; }
+        if (Math.abs(q[0] - s[0]) <= rr && Math.abs(q[1] - s[1]) <= rr) { g.pts.splice(i, 1); if (g.sheet) g.sheet--; if (!g.pts.length) F.groups.splice(j, 1); trMsg(''); traceUI(); drawTrace(); return; }
       }
     }
     F.busy = true; trMsg('Ищем такие же значки…'); cv.style.cursor = 'progress';
@@ -1395,7 +1401,8 @@
     }).join('') + fxSpecHTML(F);
     $('mlp-tdone').hidden = false; $('mlp-tdone').textContent = 'Перенести в комнаты (' + N + ')'; $('mlp-tdone').disabled = !N || F.busy;
   }
-  // Сверка со спецификацией листа: сколько по таблице и сколько отмечено — пропуски и лишние метки видно сразу
+  // Сверка со спецификацией листа: таблица — на всю квартиру, поэтому сравниваем с найденным на всём листе,
+  // а сколько из этого в обведённых комнатах — отдельно. Пропуски и лишние метки видно сразу
   function fxSpecHTML(F) {
     if (!F.spec || !F.spec.length) return '';
     var NM = { spot: 'Споты, софиты', pendant: 'Люстры, подвесы', ceiling: 'Плафоны', wall: 'Бра' }, need = {}, names = {}, lin = 0;
@@ -1403,13 +1410,16 @@
       if (r.kind === 'linear') { lin += r.n; return; }
       need[r.kind] = (need[r.kind] || 0) + r.n; (names[r.kind] = names[r.kind] || []).push(r.name + ' — ' + r.n);
     });
-    var got = {}; F.groups.forEach(function (g) { if (g.on && g.type !== 'off') got[g.type] = (got[g.type] || 0) + g.pts.length; });
+    var got = {}, inR = {}; F.groups.forEach(function (g) {
+      if (!g.on || g.type === 'off') return;
+      got[g.type] = (got[g.type] || 0) + Math.max(g.sheet || 0, g.pts.length); inR[g.type] = (inR[g.type] || 0) + g.pts.length;
+    });
     var rows = Object.keys(NM).filter(function (k) { return need[k] || got[k]; }).map(function (k) {
       var a = need[k] || 0, b = got[k] || 0, ok = a === b;
-      return '<div class="fxspec' + (ok ? ' ok' : '') + '" title="' + esc((names[k] || ['нет в спецификации']).join('\n')) + '"><span>' + NM[k] + '</span><span>по таблице ' + a + ' · отмечено ' + b +
-        (ok ? ' ✓' : b < a ? ' — не хватает ' + (a - b) : ' — лишних ' + (b - a)) + '</span></div>';
+      return '<div class="fxspec' + (ok ? ' ok' : '') + '" title="' + esc((names[k] || ['нет в спецификации']).join('\n')) + '"><span>' + NM[k] + '</span><span>по таблице ' + a + ' · на листе ' + b +
+        (ok ? ' ✓' : b < a ? ' — не нашли ' + (a - b) : ' — лишних ' + (b - a)) + ' · в ваших комнатах ' + (inR[k] || 0) + '</span></div>';
     }).join('');
-    return '<div class="fxspecs"><b>Спецификация на листе</b>' + rows + (lin ? '<div class="fxspec"><span>Ленты, линейные</span><span>' + lin + ' шт. — не переносятся, добавьте вручную</span></div>' : '') + '</div>';
+    return '<div class="fxspecs"><b>Спецификация на листе (на всю квартиру)</b>' + rows + (lin ? '<div class="fxspec"><span>Ленты, линейные</span><span>' + lin + ' шт. — не переносятся, добавьте вручную</span></div>' : '') + '</div>';
   }
   // Перенос: в каждой комнате, где нашлись светильники, группы по типам с местами из проекта (мощность —
   // как у прежней группы того же типа, если была); в остальных комнатах ничего не меняем

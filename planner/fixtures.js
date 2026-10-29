@@ -429,7 +429,9 @@
         // пунктир (LED-лента) — у каждого куска такой же сосед совсем рядом
         var near = G.filter(function (a) { return G.some(function (b) { return b !== a && Math.hypot(a.x - b.x, a.y - b.y) < 2.2 * L; }); }).length;
         if (!big && near > 0.5 * G.length) return;
-        var c0 = G[0].c.px[0], col = [d[4 * c0], d[4 * c0 + 1], d[4 * c0 + 2]];
+        // цвет значка — самый насыщенный пиксель пятна (после склейки по краям есть и белые)
+        var c0 = G[0].c.px[0], cs0 = -1; G[0].c.px.forEach(function (q) { var s0 = Math.max(d[4 * q], d[4 * q + 1], d[4 * q + 2]) - Math.min(d[4 * q], d[4 * q + 1], d[4 * q + 2]); if (s0 > cs0) { cs0 = s0; c0 = q; } });
+        var col = [d[4 * c0], d[4 * c0 + 1], d[4 * c0 + 2]];
         if (big) {
           // крупный значок (люстра) — по шаблону ищем такие же, в том числе перечёркнутые размерами; одиночка —
           // скорее заливка или подсветка
@@ -443,6 +445,17 @@
         }
         // «⊗⊗» вплотную — два софита (так их считает ведомость): значок вдвое длиннее, чем толще, и не тонкий штрих
         var cw = G[0].c.w, ch = G[0].c.h, lo = Math.min(cw, ch), asp2 = Math.max(cw, ch) / lo, two = asp2 >= 1.7 && asp2 <= 2.3 && lo >= 0.08 * ppm;
+        // а не прямоугольник 2:1 (линейный светильник): у двух кружков длинный край касается рамки только у
+        // макушек кружков, у прямоугольника — по всей длине
+        if (two) {
+          var T0 = G[0].T, hz = T0.w > T0.h, Lr = hz ? T0.w : T0.h, edge = 0;
+          for (var e3 = 0; e3 < Lr; e3++) {
+            var hit3 = false;
+            for (var k3 = 0; k3 < 1 && !hit3; k3++) hit3 = hz ? T0.t[k3 * T0.w + e3] || T0.t[(T0.h - 1 - k3) * T0.w + e3] : T0.t[e3 * T0.w + k3] || T0.t[e3 * T0.w + T0.w - 1 - k3];
+            if (hit3) edge++;
+          }
+          if (edge > 0.8 * Lr) two = false;
+        }
         var pts2 = []; G.forEach(function (a) {
           if (!two) { pts2.push({ x: a.x, y: a.y }); return; }
           var ox = cw > ch ? cw / 4 : 0, oy = cw > ch ? 0 : ch / 4;
@@ -463,11 +476,18 @@
   }
   // Значки бывают бледными (тонкие розовые линии, насыщенность ~50): если с обычным порогом цвета серии софитов
   // не набралось, повторяем с мягким — на ярких листах мягкий порог добавляет мусор, поэтому только запасной
-  function auto(img, ppm) {
+  // Чёткость линий зависит и от рендера (pdf.js рисует ярче PyMuPDF), поэтому считаем все три прохода.
+  // need — споты и софиты по ведомости: берём проход, чей итог ближе к ней; без ведомости мягкий проход
+  // берём, только если он нашёл заметно больше (иначе он лишь добавляет мусор)
+  function auto(img, ppm, need) {
+    var spots = function (A) { return A.reduce(function (m, g) { return g.kind === 'spot' && g.pts.length >= 3 ? m + g.pts.length : m; }, 0); };
     var big = function (A) { return A.reduce(function (m, g) { return g.kind === 'spot' ? Math.max(m, g.pts.length) : m; }, 0); };
-    var A = autoAt(img, ppm, 60); if (big(A) >= 10) return A;
-    var B = autoAt(img, ppm, 35); if (big(B) > big(A)) A = B; if (big(A) >= 10) return A;
-    B = autoAt(img, ppm, 35, true); return big(B) > big(A) ? B : A;
+    // мягкие проходы долгие — не нужны, если строгий уже сошёлся с ведомостью или явно нашёл серию
+    var A = autoAt(img, ppm, 60);
+    if (need ? Math.abs(spots(A) - need) <= 0.1 * need : big(A) >= 30) return A;
+    var V = [A, autoAt(img, ppm, 35), autoAt(img, ppm, 35, true)];
+    if (need) return V.reduce(function (a, b) { return Math.abs(spots(b) - need) < Math.abs(spots(a) - need) ? b : a; });
+    return V.reduce(function (a, b) { return big(b) > 1.2 * big(a) ? b : a; });
   }
 
   // Два листа одного проекта (обмерный и освещения) целиком: x_осв = s · x_обм + tx — по толстым стенам всего листа
@@ -517,7 +537,10 @@
   function specKind(t) {
     t = t.toLowerCase();
     if (/линейн|лент|профил/.test(t)) return 'linear';
-    if (/бра\b|настен/.test(t)) return 'wall';
+    // настольные лампы, торшеры, напольная подсветка — не на потолочном плане
+    if (/настольн|напольн|торшер/.test(t)) return 'other';
+    // \b в JS — только для латиницы: «бра» отдельным словом ищем по соседним буквам
+    if (/(^|[^а-яё])бра([^а-яё]|$)|настен/.test(t)) return 'wall';
     if (/люстр|подвес/.test(t)) return 'pendant';
     if (/плафон|накладн|потолочн/.test(t)) return 'ceiling';
     if (/встраив|точечн|спот|софит|трек|downlight/.test(t)) return 'spot';
@@ -525,7 +548,8 @@
   }
   function spec(items) {
     items = items.map(function (o) {
-      return { s: String(o.s).replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).trim(), x: o.x, y: o.y, h: o.h || 10 };
+      // кириллица, записанная как latin-1 (cp1251): буквы и «№» (0xB9)
+      return { s: String(o.s).replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).replace(/¹/g, '№').trim(), x: o.x, y: o.y, h: o.h || 10 };
     }).filter(function (o) { return o.s; });
     var out = [];
     items.filter(function (o) { return /кол[-\s.]*во|количеств/i.test(o.s); }).forEach(function (H) {
@@ -540,10 +564,176 @@
       rows.forEach(function (r) {
         if (!r.w.length) return;
         var name = r.w.sort(function (a, b) { return Math.abs(a.y - b.y) > 0.5 * H.h ? a.y - b.y : a.x - b.x; }).map(function (o) { return o.s; }).join(' ').replace(/\s+/g, ' ');
-        if (name.length <= 90) out.push({ name: name, n: +r.o.s, kind: specKind(name) });
+        // x — левый край названия, y — строка (по числу): слева от названия в колонке «Вид» обычно сам значок
+        if (name.length <= 90) out.push({ name: name, n: +r.o.s, kind: specKind(name), x: Math.min.apply(null, r.w.map(function (o) { return o.x; })), y: r.o.y, h: H.h });
       });
     });
     return out;
   }
-  window.MLPFix = { spec: spec, register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist, full: full, chan: chan, patch: patch, sim: sim, occMask: occMask, colorMask: colorMask } };
+  // ---------- Значки из ведомости ----------
+  // В ведомости дизайнер сам рисует значок каждого типа слева от названия (колонка «Вид») — это ключ к листу:
+  // найденные метки сравниваем с этими значками (без учёта масштаба — в ведомости их часто рисуют мельче или
+  // крупнее, чем на плане) и берём тип, название и количество из строки. Бра так не путаются со спотами,
+  // влагостойкий «○» — с обычным «⊗». Метки внутри самой ведомости — образцы, не светильники.
+  var SG = 20;
+  // подпись значка: маска в рамке → SG×SG, клетка «есть линия», если в её части картинки есть хоть пиксель
+  function sigOf(m, w, b) {
+    var s = new Uint8Array(SG * SG), n = 0;
+    for (var y = b[1]; y <= b[3]; y++) for (var x = b[0]; x <= b[2]; x++) {
+      if (!m[y * w + x]) continue;
+      var u = Math.min(SG - 1, Math.floor((x - b[0]) * SG / (b[2] - b[0] + 1))), v = Math.min(SG - 1, Math.floor((y - b[1]) * SG / (b[3] - b[1] + 1)));
+      if (!s[v * SG + u]) { s[v * SG + u] = 1; n++; }
+    }
+    return n ? s : null;
+  }
+  function sigSim(a, b) { // полнота и точность с допуском в клетку, итог — среднее гармоническое
+    function cov(p, q) {
+      var hit = 0, all = 0;
+      for (var y = 0; y < SG; y++) for (var x = 0; x < SG; x++) {
+        if (!p[y * SG + x]) continue; all++;
+        outer: for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < SG && Y < SG && q[Y * SG + X]) { hit++; break outer; } }
+      }
+      return all ? hit / all : 0;
+    }
+    var p = cov(a, b), r = cov(b, a); return p + r ? 2 * p * r / (p + r) : 0;
+  }
+  // плотная рамка линий в окне (по маске)
+  function tight(m, w, x0, y0, x1, y1) {
+    var b = [x1, y1, x0, y0];
+    for (var y = y0; y <= y1; y++) for (var x = x0; x <= x1; x++) if (m[y * w + x]) { if (x < b[0]) b[0] = x; if (x > b[2]) b[2] = x; if (y < b[1]) b[1] = y; if (y > b[3]) b[3] = y; }
+    return b[2] >= b[0] && b[3] >= b[1] ? b : null;
+  }
+  // куски маски, задевающие середину (полуразмеры hw×hh / 2) в окне вдвое больше рамки, — общая рамка
+  function symBox(m, w, h, p, hw, hh) {
+    var X0 = Math.max(0, Math.round(p[0] - 2 * hw)), Y0 = Math.max(0, Math.round(p[1] - 2 * hh)), X1 = Math.min(w, Math.round(p[0] + 2 * hw) + 1), Y1 = Math.min(h, Math.round(p[1] + 2 * hh) + 1);
+    // волосяные значки рваные — связность считаем по маске окна, расширенной на пиксель
+    var lw = X1 - X0, lh = Y1 - Y0, lm = new Uint8Array(lw * lh), x, y;
+    for (y = 0; y < lh; y++) for (x = 0; x < lw; x++) if (m[(y + Y0) * w + x + X0])
+      for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var u = x + dx, v = y + dy; if (u >= 0 && v >= 0 && u < lw && v < lh) lm[v * lw + u] = 1; }
+    var cx0 = p[0] - X0 - hw / 2, cx1 = p[0] - X0 + hw / 2, cy0 = p[1] - Y0 - hh / 2, cy1 = p[1] - Y0 + hh / 2, b = null;
+    comps(lm, lw, lh, function (c) {
+      if (c.x1 < cx0 || c.x0 > cx1 || c.y1 < cy0 || c.y0 > cy1) return;
+      if (Math.min(c.w, c.h) <= 4 && (c.w >= lw - 1 || c.h >= lh - 1)) return; // тонкая линия насквозь
+      b = b ? [Math.min(b[0], c.x0), Math.min(b[1], c.y0), Math.max(b[2], c.x1), Math.max(b[3], c.y1)] : [c.x0, c.y0, c.x1, c.y1];
+    });
+    return b && tight(m, w, Math.max(X0, b[0] + X0), Math.max(Y0, b[1] + Y0), Math.min(X1 - 1, b[2] + X0), Math.min(Y1 - 1, b[3] + Y0));
+  }
+  // rows — строки spec (x, y, h в единицах страницы), k — пикселей картинки на единицу страницы
+  function legend(img, rows, k) {
+    var P = full(img), w = P.w, h = P.h, d = P.d, syms = [], T = null;
+    var ink = new Uint8Array(w * h);
+    rows.forEach(function (r) {
+      if (r.x == null) return;
+      var x0 = Math.max(0, Math.round((r.x - 9 * r.h) * k)), x1 = Math.min(w - 1, Math.round((r.x - 0.3 * r.h) * k));
+      var y0 = Math.max(0, Math.round((r.y - 1.7 * r.h) * k)), y1 = Math.min(h - 1, Math.round((r.y + 0.7 * r.h) * k));
+      if (x1 - x0 < 4 || y1 - y0 < 4) return;
+      // вся таблица — от колонки «Вид» до количества
+      var tx1 = Math.round((r.x + 30 * r.h) * k);
+      T = T ? [Math.min(T[0], x0), Math.min(T[1], y0), Math.max(T[2], tx1), Math.max(T[3], y1)] : [x0, y0, tx1, y1];
+      if (!/spot|wall|pendant|ceiling/.test(r.kind)) return;
+      var x, y;
+      for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) { var i = (y * w + x) * 4; var mn0 = Math.min(d[i], d[i + 1], d[i + 2]); ink[y * w + x] = mn0 < 225 || Math.max(d[i], d[i + 1], d[i + 2]) - mn0 >= 15 ? 1 : 0; }
+      // значок — самое крупное подходящее пятно, не касающееся краёв клетки (линии таблицы идут насквозь).
+      // Подходящее: тонкие линии (плотное — фото товара или заливка) и цветное, как значки, которые находит auto
+      // (серо-белое — фото светильника; чёрное — буквы названия: окно по тексту бывает шире клетки)
+      var best = null, bn = 0;
+      comps(ink, w, h, function (c) {
+        if (c.x0 <= x0 || c.y0 <= y0 || c.x1 >= x1 || c.y1 >= y1) return;
+        if (Math.min(c.w, c.h) < 3 || c.px.length < 8 || c.px.length > 0.7 * c.w * c.h) return;
+        var col = 0; c.px.forEach(function (q) { if (Math.max(d[4 * q], d[4 * q + 1], d[4 * q + 2]) - Math.min(d[4 * q], d[4 * q + 1], d[4 * q + 2]) >= 25) col++; });
+        if (col < 0.3 * c.px.length) return;
+        if (c.px.length > bn) { bn = c.px.length; best = c; }
+      }, x0, y0, x1 + 1, y1 + 1);
+      if (!best) return;
+      var b = [best.x0, best.y0, best.x1, best.y1], s = sigOf(ink, w, b); if (!s) return;
+      // такой же значок у другой строки (Люстра №1 и №2) — одна запись, количество складываем
+      var same = syms.filter(function (o) { return o.kind === r.kind && sigSim(o.sig, s) > 0.97 && Math.abs(Math.log((o.b[2] - o.b[0] + 1) / (b[2] - b[0] + 1))) < 0.2; })[0];
+      if (same) { same.n += r.n; same.name += '; ' + r.name; return; }
+      syms.push({ kind: r.kind, name: r.name, n: r.n, sig: s, b: b, asp: (b[2] - b[0] + 1) / (b[3] - b[1] + 1) });
+    });
+    if (window.__fixdbg) window.__fixdbg.leg = syms.map(function (o) { return [o.kind, o.n, o.name, o.b]; });
+    return { syms: syms, table: T };
+  }
+  // Маска формы значка: тот же оттенок при любой заметной насыщенности — у волосяных линий цвет бледный, строгая
+  // маска оставляет обрывки; серые размеры и выноски не попадают. Чёрно-белый значок — как colorMask
+  function softMask(P, c) {
+    if (Math.max(c[0], c[1], c[2]) - Math.min(c[0], c[1], c[2]) < 40) return colorMask(P, c);
+    var d = P.d, N = P.w * P.h, m = new Uint8Array(N), h0 = hueOf(c[0], c[1], c[2]);
+    for (var i = 0; i < N; i++) {
+      var r = d[4 * i], g = d[4 * i + 1], b = d[4 * i + 2], mx = Math.max(r, g, b), s = mx - Math.min(r, g, b);
+      if (s < 15 || mx < 70) continue;
+      var dh = Math.abs(hueOf(r, g, b) - h0); if (Math.min(dh, 360 - dh) <= 35) m[i] = 1;
+    }
+    return m;
+  }
+  // Найденные группы → по значкам ведомости: каждая метка получает тип строки с самым похожим значком
+  // (похожесть ≥ 0,6 и форма рамки близка); не похожие ни на что остаются как были
+  function classify(img, groups, L, ppm) {
+    var P = full(img), w = P.w, h = P.h, masks = {}, out = [], byS = {};
+    // самый похожий значок ведомости; размер на плане — для разумности: люстра не меньше ~0,22 м, софит не больше ~0,25 м
+    // (по одной форме маленький кружок софита не отличить от большого кружка люстры)
+    var gsz = 0;
+    function bestSym(s, asp, sz) {
+      var bj = null, bv = 0;
+      L.syms.forEach(function (o, j) {
+        if (Math.abs(Math.log(asp / o.asp)) > 0.35) return;
+        if (ppm && ((o.kind === 'pendant' && Math.min(sz, gsz) < 0.22 * ppm) || (o.kind === 'spot' && Math.max(sz, gsz) > 0.25 * ppm))) return;
+        var v = sigSim(s, o.sig); if (v > bv) { bv = v; bj = j; }
+      });
+      return [bj, bv];
+    }
+    var inT = function (p) { var t = L.table; return t && p[0] >= t[0] - 6 && p[0] <= t[2] + 6 && p[1] >= t[1] - 6 && p[1] <= t[3] + 6; };
+    var rests = groups.map(function () { return []; });
+    groups.forEach(function (g, gi) {
+      var key = g.color ? g.color.map(Math.round).join(',') : '', m = masks[key] || (masks[key] = g.color ? softMask(P, g.color) : null);
+      var rest = rests[gi]; gsz = Math.max(g.w, g.h) / (g.pair ? 2 : 1); // размер значка по группе — рамку на листе может раздуть сосед
+      var put = function (j, pts, p0) { var e = byS[j] = byS[j] || { pts: [], src: g, from: [] }; pts.forEach(function (q) { e.pts.push(q); }); e.from.push([gi, p0]); };
+      g.pts.forEach(function (p) {
+        if (inT(p)) return; // образец в ведомости
+        var best = null, bs = 0;
+        if (m && L.syms.length) {
+          // рамка значка — куски маски, проходящие через середину метки (значок целиком, даже если он больше рамки
+          // группы); пара «⊗⊗» разделена на две точки — у каждой своя половина
+          var hw = (g.pair && g.w > g.h ? g.w / 2 : g.w) / 2 + 2, hh = (g.pair && g.h >= g.w ? g.h / 2 : g.h) / 2 + 2;
+          var b = symBox(m, w, h, p, hw, hh);
+          if (b && g.pair) b = tight(m, w, Math.max(b[0], Math.round(p[0] - hw)), Math.max(b[1], Math.round(p[1] - hh)), Math.min(b[2], Math.round(p[0] + hw)), Math.min(b[3], Math.round(p[1] + hh)));
+          var s = b && sigOf(m, w, b), asp = b && (b[2] - b[0] + 1) / (b[3] - b[1] + 1);
+          if (s) { var r0 = bestSym(s, asp, Math.max(b[2] - b[0], b[3] - b[1]) + 1); best = r0[0]; bs = r0[1]; }
+        }
+        if (window.__fixdbg) { var D = window.__fixdbg.cls = window.__fixdbg.cls || []; D.push([Math.round(p[0]), Math.round(p[1]), b && [b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1], best, +bs.toFixed(2), s ? L.syms.map(function (o) { return +sigSim(s, o.sig).toFixed(2); }) : null]); }
+        if ((best === null || bs < 0.6) && b && Math.max(asp, 1 / asp) >= 1.35) {
+          // два значка вплотную («⊗» над «⊗»): обе половины похожи на один и тот же значок ведомости — два светильника
+          var hor = asp > 1, H2 = [], ok2 = [0, 1].every(function (k2) {
+            var bb = hor ? [b[0] + (k2 ? Math.ceil((b[2] - b[0]) / 2) : 0), b[1], k2 ? b[2] : b[0] + Math.floor((b[2] - b[0]) / 2), b[3]]
+              : [b[0], b[1] + (k2 ? Math.ceil((b[3] - b[1]) / 2) : 0), b[2], k2 ? b[3] : b[1] + Math.floor((b[3] - b[1]) / 2)];
+            var s2 = sigOf(m, w, bb), r2 = s2 ? bestSym(s2, (bb[2] - bb[0] + 1) / (bb[3] - bb[1] + 1), Math.max(bb[2] - bb[0], bb[3] - bb[1]) + 1) : [null, 0], bj = r2[0], bv = r2[1];
+            if (window.__fixdbg) (window.__fixdbg.half = window.__fixdbg.half || []).push([Math.round(p[0]), Math.round(p[1]), bb, bj, +bv.toFixed(2)]);
+            H2.push([bj, [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2]]); return bj !== null && bv >= 0.6;
+          });
+          if (ok2 && H2[0][0] === H2[1][0]) { put(H2[0][0], [H2[0][1], H2[1][1]], p); return; }
+        }
+        if (best !== null && bs >= 0.6) put(best, [p], p); else rest.push(p);
+      });
+    });
+    // значку досталось намного больше меток, чем в его строке, — ведомость не про эти значки (фото товара вместо
+    // условного знака, похожие очертания): метки остаются в своих группах
+    Object.keys(byS).forEach(function (j) {
+      var a = byS[j]; if (a.pts.length <= 1.5 * L.syms[j].n + 2) return;
+      a.from.forEach(function (f) { rests[f[0]].push(f[1]); }); delete byS[j];
+    });
+    groups.forEach(function (g, gi) { if (rests[gi].length) { g.pts = rests[gi]; out.push(g); } });
+    Object.keys(byS).forEach(function (j) {
+      var o = L.syms[j], a = byS[j], g = a.src;
+      out.push({ pts: a.pts, w: g.pair ? (g.w > g.h ? g.w / 2 : g.w) : g.w, h: g.pair ? (g.h >= g.w ? g.h / 2 : g.h) : g.h, color: g.color, kind: o.kind, tpl: g.tpl, name: o.name, need: o.n, legend: true });
+    });
+    // одна строка ведомости из нескольких групп (одиночные и парные «⊗») — сливаем
+    var res = [];
+    out.forEach(function (g) {
+      var same = g.legend && res.filter(function (o) { return o.legend && o.name === g.name; })[0];
+      if (same) same.pts = same.pts.concat(g.pts); else res.push(g);
+    });
+    res.sort(function (a, b) { return b.pts.length - a.pts.length; });
+    return res;
+  }
+  window.MLPFix = { legend: legend, classify: classify, spec: spec, register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist, full: full, chan: chan, patch: patch, sim: sim, occMask: occMask, colorMask: colorMask } };
 })();

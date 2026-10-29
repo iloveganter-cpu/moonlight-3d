@@ -90,7 +90,7 @@
     '.mlp .mk{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.mlp .mk.good{background:#2e7d32}.mlp .mk.warn{background:#ef6c00}.mlp .mk.bad{background:#c62828}' +
     '.mlp .apt{width:100%;border-collapse:collapse;font-size:13px}.mlp .apt td,.mlp .apt th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.mlp .apt td:first-child,.mlp .apt th:first-child{text-align:left}' +
     '.mlp .apt th{font-weight:400;color:var(--mute);font-size:12px}.mlp .apt tr[data-ri]{cursor:pointer}.mlp .apt tr[data-ri]:hover{background:var(--soft)}.mlp .apt tfoot td{font-weight:600;border-bottom:0}' +
-    '.mlp .fxrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}.mlp .fxrow .sw2{width:16px;height:16px;border-radius:3px;flex:none}.mlp .fxrow select{width:auto;height:30px}' +
+    '.mlp .fxrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}.mlp .fxrow .sw2{width:16px;height:16px;border-radius:3px;flex:none}.mlp .fxrow select{width:auto;height:30px}.mlp .fxrow .fxname{color:#666;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.mlp .fxspecs{margin:8px 0;padding:8px 10px;border-radius:8px;background:#fff4e0;font-size:13px}.mlp .fxspec{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;color:#a14a00}.mlp .fxspec.ok{color:#1b7f3a}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
@@ -921,7 +921,8 @@
       c.width = Math.round(vp.width); c.height = Math.round(vp.height); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
       if (noLines) x.stroke = function () {};
       // intent 'print' — без requestAnimationFrame, иначе в фоновой вкладке рендер стоит
-      return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { c._pdf = { doc: doc, n: n }; return c; });
+      // k — пикселей картинки на единицу страницы (для значков ведомости по координатам текста)
+      return pg.render({ canvasContext: x, viewport: vp, intent: 'print' }).promise.then(function () { c._pdf = { doc: doc, n: n, k: vp.scale }; return c; });
     });
   }
   function loadPlan(file, lit) {
@@ -977,12 +978,30 @@
   // спецификация светильников на листе (таблица «Наименование … Кол-во»)
   function pageSpec(doc, n) {
     return doc.getPage(n).then(function (pg) {
-      var H = pg.getViewport({ scale: 1 }).height;
+      // координаты — через viewport: у страницы бывает смещённое начало (mediabox), а значки ведомости ищем по ним на картинке
+      var V = pg.getViewport({ scale: 1 });
       return pg.getTextContent().then(function (tc) {
-        return window.MLPFix.spec(tc.items.map(function (o) { var m = o.transform; return { s: o.str, x: m[4], y: H - m[5], h: Math.hypot(m[2], m[3]) }; }))
+        return window.MLPFix.spec(tc.items.map(function (o) { var m = o.transform, p = V.convertToViewportPoint(m[4], m[5]); return { s: o.str, x: p[0], y: p[1], h: Math.hypot(m[2], m[3]) }; }))
           .filter(function (r) { return r.kind !== 'other'; });
       });
     }).catch(function () { return []; });
+  }
+  // ведомость светильников: на этом листе, иначе — на листе «Ведомость / спецификация освещения» того же проекта
+  function specAny(doc, n) {
+    return pageSpec(doc, n).then(function (rows) {
+      if (rows.length || doc.numPages < 2) return { rows: rows, n: n };
+      var k = 0, found = { rows: [], n: n };
+      function next() {
+        if (++k > doc.numPages) return found;
+        if (k === n) return next();
+        return doc.getPage(k).then(function (pg) { return pg.getTextContent(); }).then(function (tc) {
+          var t = tc.items.map(function (x) { return x.str; }).join(' ').replace(/[À-ÿ]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xc0 + 0x410); }).toLowerCase();
+          if (!/(ведомост|спецификац)[а-я\s]{0,20}(освещ|осветит|светильн)/.test(t)) return next();
+          return pageSpec(doc, k).then(function (r) { if (r.length) { found = { rows: r, n: k }; return found; } return next(); });
+        }, next);
+      }
+      return next();
+    });
   }
   function docScores(doc) { var a = []; for (var k = 0; k < doc.numPages; k++) a.push(pageText(doc, k)); return Promise.all(a); }
   function pickPage(doc, lit) {
@@ -1323,16 +1342,27 @@
         if (!R) { trMsg('Не удалось совместить этот лист с планом комнат. Попробуйте другой лист.'); return; }
         t.fx.reg = R; t.fx.rooms = mine; t.fx.polys = polys; t.fx.ppm = R.s / mine[0].bg.mpp; // пикселей листа на метр
         // PDF: тот же лист без линий и спецификация с него
-        if (lim._pdf) return Promise.all([pdfPage(lim._pdf.doc, lim._pdf.n, true), pageSpec(lim._pdf.doc, lim._pdf.n)])
-          .then(function (a) { t.fx.ns = a[0]; t.fx.spec = a[1]; }, function () {});
+        if (lim._pdf) return Promise.all([pdfPage(lim._pdf.doc, lim._pdf.n, true), specAny(lim._pdf.doc, lim._pdf.n)])
+          .then(function (a) {
+            t.fx.ns = a[0]; t.fx.spec = a[1].rows;
+            // ведомость на другом листе — значки берём с его картинки, а образцы на листе освещения не ищем
+            if (!a[1].rows.length) return;
+            return (a[1].n === lim._pdf.n ? Promise.resolve(lim) : pdfPage(lim._pdf.doc, a[1].n)).then(function (sp) {
+              t.fx.leg = window.MLPFix.legend(sp, a[1].rows, sp._pdf.k); if (sp !== lim) t.fx.leg.table = null;
+            });
+          }, function () {});
       })
       .then(function () {
         if (tr !== t || !t.fx.reg) return;
         // значки ищем на листе без линий, если там их не меньше половины (у некоторых проектов сами значки — линии)
         var inRooms = function (A) { return A.reduce(function (s, g) { return s + g.pts.filter(function (p) { return fxWhere(t, p); }).length; }, 0); };
-        var A = window.MLPFix.auto(lim, t.fx.ppm), B = t.fx.ns ? window.MLPFix.auto(t.fx.ns, t.fx.ppm) : null;
+        // сколько спотов и софитов по ведомости — по этому выбирается порог цвета
+        var need = (t.fx.spec || []).reduce(function (s, r) { return r.kind === 'spot' ? s + r.n : s; }, 0);
+        var A = window.MLPFix.auto(lim, t.fx.ppm, need), B = t.fx.ns ? window.MLPFix.auto(t.fx.ns, t.fx.ppm, need) : null;
         t.fx.useNs = !!B && inRooms(B) >= 0.5 * inRooms(A);
-        (t.fx.useNs ? B : A).forEach(function (g) { fxAdd(t, g, g.kind === 'pendant' || g.pts.length >= 8); });
+        // ведомость с условными знаками: тип, название и количество каждой метки — по самому похожему знаку
+        var G = t.fx.useNs ? B : A; if (t.fx.leg && t.fx.leg.syms.length) G = window.MLPFix.classify(t.fx.useNs ? t.fx.ns : lim, G, t.fx.leg, t.fx.ppm);
+        G.forEach(function (g) { fxAdd(t, g, g.kind === 'pendant' || g.pts.length >= 8); });
         trMsg(t.fx.groups.length ? '' : 'Значки светильников автоматически не нашлись — нажмите на любой значок светильника на листе, найдём все такие же.');
       }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет.'); })
       .then(function () { if (tr === t) { t.fx.busy = false; traceUI(); drawTrace(); } });
@@ -1399,7 +1429,8 @@
       : 'Зелёные контуры — ваши комнаты. Проверьте метки: лишнюю уберите нажатием на неё; не отмечен какой-то светильник — нажмите на его значок, найдём все такие же. Укажите тип каждой группы и нажмите «Перенести в комнаты».');
     $('mlp-fxlist').innerHTML = F.groups.map(function (g, i) {
       return '<div class="fxrow"><span class="sw2" style="border:2.5px solid ' + g.col + '"></span><span>' + g.pts.length + ' шт.</span><select data-fx="' + i + '">' +
-        FIXK.map(function (k) { return '<option value="' + k[0] + '"' + ((g.on ? g.type : 'off') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></div>';
+        FIXK.map(function (k) { return '<option value="' + k[0] + '"' + ((g.on ? g.type : 'off') === k[0] ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>' +
+        (g.name ? '<span class="fxname" title="' + esc(g.name) + '">' + esc(g.name) + '</span>' : '') + '</div>';
     }).join('') + fxSpecHTML(F);
     $('mlp-tdone').hidden = false; $('mlp-tdone').textContent = 'Перенести в комнаты (' + N + ')'; $('mlp-tdone').disabled = !N || F.busy;
   }

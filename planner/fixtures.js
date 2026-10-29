@@ -393,18 +393,19 @@
   }
 
   // Автоматически: компактные цветные значки тёплых оттенков (красный, оранжевый, розовый), повторяющиеся
-  function auto(img, ppm) {
+  function autoAt(img, ppm, SAT, grow) {
     var P = full(img), w = P.w, h = P.h, d = P.d, N = w * h, smin = 0.09 * ppm, smax = 1.4 * ppm, all = [];
     var bins = [[330, 30], [30, 60]]; // красно-розовый, оранжевый
     bins.forEach(function (bn) {
       var m = new Uint8Array(N), n = 0;
       for (var i = 0; i < N; i++) {
         var r = d[4 * i], g = d[4 * i + 1], b = d[4 * i + 2], mx = Math.max(r, g, b), sat = mx - Math.min(r, g, b);
-        if (sat < 60 || mx < 110) continue;
+        if (sat < SAT || mx < 110) continue;
         var hu = hueOf(r, g, b), inb = bn[0] > bn[1] ? hu >= bn[0] || hu < bn[1] : hu >= bn[0] && hu < bn[1];
         if (inb) { m[i] = 1; n++; }
       }
       if (n < 50) return;
+      if (grow) m = dilate(m, w, h); // волосяные значки рвутся на куски — склеиваем разрывы в пиксель
       var cs = [];
       comps(m, w, h, function (c) {
         var L = Math.max(c.w, c.h); if (L < smin || L > smax || L / Math.max(1, Math.min(c.w, c.h)) > 3.5) return;
@@ -440,11 +441,33 @@
           all.push(group(hits, G[0].T, col, 'pendant'));
           return;
         }
-        all.push(group(G.map(function (a) { return { x: a.x, y: a.y }; }), G[0].T, col, 'spot'));
+        // «⊗⊗» вплотную — два софита (так их считает ведомость): значок вдвое длиннее, чем толще, и не тонкий штрих
+        var cw = G[0].c.w, ch = G[0].c.h, lo = Math.min(cw, ch), asp2 = Math.max(cw, ch) / lo, two = asp2 >= 1.7 && asp2 <= 2.3 && lo >= 0.08 * ppm;
+        var pts2 = []; G.forEach(function (a) {
+          if (!two) { pts2.push({ x: a.x, y: a.y }); return; }
+          var ox = cw > ch ? cw / 4 : 0, oy = cw > ch ? 0 : ch / 4;
+          pts2.push({ x: a.x - ox, y: a.y - oy }, { x: a.x + ox, y: a.y + oy });
+        });
+        var gs = group(pts2, G[0].T, col, 'spot'); if (two) gs.pair = true;
+        all.push(gs);
       });
     });
+    // мелкий «значок», найденный внутри крупной люстры (луч, плафон), — не отдельная люстра: от крупных к мелким
+    var pend = all.filter(function (o) { return o.kind === 'pendant'; }).sort(function (a, b) { return b.w * b.h - a.w * a.h; });
+    pend.forEach(function (o, j) {
+      o.pts = o.pts.filter(function (p) { return !pend.slice(0, j).some(function (B) { return B.pts.length && B.pts.some(function (q) { return Math.hypot(q[0] - p[0], q[1] - p[1]) < Math.max(B.w, B.h); }); }); });
+    });
+    all = all.filter(function (o) { return o.kind !== 'pendant' || o.pts.length >= 2; });
     all.sort(function (a, b) { return b.pts.length - a.pts.length; });
     return all;
+  }
+  // Значки бывают бледными (тонкие розовые линии, насыщенность ~50): если с обычным порогом цвета серии софитов
+  // не набралось, повторяем с мягким — на ярких листах мягкий порог добавляет мусор, поэтому только запасной
+  function auto(img, ppm) {
+    var big = function (A) { return A.reduce(function (m, g) { return g.kind === 'spot' ? Math.max(m, g.pts.length) : m; }, 0); };
+    var A = autoAt(img, ppm, 60); if (big(A) >= 10) return A;
+    var B = autoAt(img, ppm, 35); if (big(B) > big(A)) A = B; if (big(A) >= 10) return A;
+    B = autoAt(img, ppm, 35, true); return big(B) > big(A) ? B : A;
   }
 
   // Два листа одного проекта (обмерный и освещения) целиком: x_осв = s · x_обм + tx — по толстым стенам всего листа

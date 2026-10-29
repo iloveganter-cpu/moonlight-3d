@@ -18,6 +18,36 @@
     var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
     var d = x.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
     for (var i = 0; i < w * h; i++) g[i] = (d[4 * i] * 77 + d[4 * i + 1] * 150 + d[4 * i + 2] * 29) >> 8;
+    return { g: g, w: w, h: h, d: d };
+  }
+  // Комнаты залиты своим цветом (бледно-голубым и т. п.), а стены — белые с тонкой светлой штриховкой: тёмная
+  // и светлая маски таких стен не видят. Стена = всё, что не цвета заливки под кликом. null — заливки нет
+  // (под кликом бумага, или такого цвета на плане почти нет)
+  function fillMask(G0, s) {
+    var w = G0.w, h = G0.h, d = G0.d, x, y, i, W = {}, c = null, cn = 0;
+    var sx = Math.round(s[0]), sy = Math.round(s[1]), r = Math.round(Math.max(w, h) / 40);
+    // кликают обычно по подписи площади, а она на белой плашке — цвет заливки ищем вокруг, чисто белое не в счёт
+    for (y = sy - r; y <= sy + r; y++) for (x = sx - r; x <= sx + r; x++) {
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      i = y * w + x; if (G0.g[i] < 200) continue; // буквы и линии
+      if (d[4 * i] > 253 && d[4 * i + 1] > 253 && d[4 * i + 2] > 253) continue;
+      var key0 = d[4 * i] + ',' + d[4 * i + 1] + ',' + d[4 * i + 2]; W[key0] = (W[key0] || 0) + 1;
+      if (W[key0] > cn) { cn = W[key0]; c = [d[4 * i], d[4 * i + 1], d[4 * i + 2]]; }
+    }
+    if (!c || cn < 0.2 * r * r) return null;
+    // бумага — самый частый светлый цвет вне заливки; заливка должна отличаться от неё хотя бы на 3
+    var hist = {}, top = null, tn = 0;
+    for (i = 0; i < w * h; i += 7) { var key = (d[4 * i] >> 1) + ',' + (d[4 * i + 1] >> 1) + ',' + (d[4 * i + 2] >> 1); hist[key] = (hist[key] || 0) + 1; }
+    var near = function (r, g, b, tol) { return Math.abs(r - c[0]) <= tol && Math.abs(g - c[1]) <= tol && Math.abs(b - c[2]) <= tol; };
+    for (var k in hist) {
+      var p = k.split(',').map(function (v) { return 2 * v; });
+      if (p[0] + p[1] + p[2] > 690 && !near(p[0], p[1], p[2], 2) && hist[k] > tn) { tn = hist[k]; top = p; }
+    }
+    var dist = top ? Math.max(Math.abs(top[0] - c[0]), Math.abs(top[1] - c[1]), Math.abs(top[2] - c[2])) : 255;
+    if (dist < 3) return null;
+    var tol = Math.max(1, Math.min(12, Math.floor(dist / 2))), g = new Uint8Array(w * h), n = 0;
+    for (i = 0; i < w * h; i++) if (near(d[4 * i], d[4 * i + 1], d[4 * i + 2], tol)) { g[i] = 255; n++; }
+    if (n < 0.02 * w * h) return null;
     return { g: g, w: w, h: h };
   }
   // Главное направление линий (по модулю 90°) — гистограмма направлений градиента
@@ -505,9 +535,18 @@
     });
     if (!LIGHT) V = V.concat(VT);
     V.push({ t: 0 });
+    // 4) последним — по цвету заливки комнаты (строится, только если до него дошло)
+    V.push({ fill: true });
     var pick = null, backup = null;
     for (var vi = 0; vi < V.length && !pick; vi++) {
-      var v = V[vi], src = v.src || Dk, m0 = v.c ? closeMask(src, w, h, v.c) : src;
+      var v = V[vi];
+      if (v.fill) {
+        var F = fillMask(G0, [click[0] * k, click[1] * k]); if (!F) continue;
+        F = deskew(F, ax); var Fm = new Uint8Array(w * h);
+        for (var i7 = 0; i7 < w * h; i7++) Fm[i7] = F.g[i7] < 128 ? 1 : 0;
+        v.src = Fm; v.t = 2;
+      }
+      var src = v.src || Dk, m0 = v.c ? closeMask(src, w, h, v.c) : src;
       var W = filterWalls(openMask(m0, w, h, v.t), w, h, v.t, v.c ? 0.1 : 0.03);
       if (G.oob) for (var i2 = 0; i2 < w * h; i2++) if (G.oob[i2]) W[i2] = 1; // за краем исходной картинки — «стена», касание отметим ниже
       var r = room(W, w, h, seed, ALPHA, G.oob); if (!r) continue;
@@ -520,7 +559,7 @@
     if (!pick) pick = backup;
     var info = { ax: +(ax * 180 / Math.PI).toFixed(2), lightR: +lightR.toFixed(2), dkF: +dkF.toFixed(4), tnF: +tnF.toFixed(4), thin: t1, k: k, tries: res.map(function (x) { return [x.v.c || 0, x.v.t, x.s.area, x.ok]; }) };
     if (!pick) return { error: res.some(function (x) { return x.s.edge || x.r.clipped; }) ? 'edge' : 'none', info: info };
-    if (pick.v.src) { // светлые стены искали по размытой картинке — они вышли на пиксель толще, комнату расширяем
+    if (pick.v.src && !pick.v.fill) { // светлые стены искали по размытой картинке — они вышли на пиксель толще, комнату расширяем
       var inv6 = new Uint8Array(w * h), i6; for (i6 = 0; i6 < w * h; i6++) inv6[i6] = pick.s.m[i6] ? 0 : 1;
       var d6 = cheb(inv6, w, h, false), g6 = new Uint8Array(w * h), a6 = 0;
       for (i6 = 0; i6 < w * h; i6++) if (d6[i6] <= 1) { g6[i6] = 1; a6++; }

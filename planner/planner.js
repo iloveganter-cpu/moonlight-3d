@@ -1235,19 +1235,36 @@
   // Готовим заранее, сразу после открытия; null — обмерного нет или он не совместился
   function wallPrep(img) {
     if (!img._pdf || !img._pdf.wall) return Promise.resolve(null);
-    if (!img._wallP) img._wallP = (window.MLPFix ? Promise.resolve() : loadScript(BASE + 'fixtures.js' + VER))
-      .then(function () { return pdfPage(img._pdf.doc, img._pdf.wall); })
-      .then(function (c) { var R = window.MLPFix.sheets(c, img); return R && R.rev < 3.8 ? { c: c, R: R } : null; })
+    if (!img._wallP) img._wallP = pdfPage(img._pdf.doc, img._pdf.wall)
+      .then(function (c) { return work('fix.sheets', [c, img]).then(function (R) { return R && R.rev < 3.8 ? { c: c, R: R } : null; }); })
       .catch(function () { return null; });
     return img._wallP;
   }
+  // Стены ищутся на картинке ≤ 1000 px (autowall: MAXW): уменьшаем здесь, как это делает autowall, — в фоновом
+  // потоке уменьшение другое, и тонкие стены теряются. Точки — туда и обратно
+  function awSmall(c) {
+    if (!c._aw) {
+      var k = Math.min(1, 1000 / Math.max(c.width, c.height)), s = document.createElement('canvas');
+      s.width = Math.max(1, Math.round(c.width * k)); s.height = Math.max(1, Math.round(c.height * k));
+      var x = s.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, s.width, s.height); x.drawImage(c, 0, 0, s.width, s.height);
+      c._aw = { c: s, k: k };
+    }
+    return c._aw;
+  }
+  function awDetect(c, p) {
+    var S = awSmall(c);
+    return work('aw.detect', [S.c, [p[0] * S.k, p[1] * S.k]]).then(function (r) {
+      if (r && r.pts) r.pts = r.pts.map(function (q) { return [q[0] / S.k, q[1] / S.k]; });
+      return r;
+    });
+  }
   function wallDetect(img, p) {
     return wallPrep(img).then(function (W) {
-      if (W) {
-        var R = W.R, r = window.MLPAutoWall.detect(W.c, [(p[0] - R.tx) / R.s, (p[1] - R.ty) / R.s]);
-        if (r.pts) { r.pts = r.pts.map(function (q) { return [q[0] * R.s + R.tx, q[1] * R.s + R.ty]; }); return r; }
-      }
-      return window.MLPAutoWall.detect(img, p);
+      var R = W && W.R;
+      return (W ? awDetect(W.c, [(p[0] - R.tx) / R.s, (p[1] - R.ty) / R.s]) : Promise.resolve(null)).then(function (r) {
+        if (r && r.pts) { r.pts = r.pts.map(function (q) { return [q[0] * R.s + R.tx, q[1] * R.s + R.ty]; }); return r; }
+        return awDetect(img, p);
+      });
     });
   }
   // Надписи листа PDF в пикселях картинки плана: { s, x, y (середина), ux, uy (направление строки), h }. План —
@@ -1272,7 +1289,7 @@
     if (!img._pdf || !img._pdf.wall) return Promise.resolve(null);
     if (!img._wallL) img._wallL = wallPrep(img).then(function (W) {
       return W || pdfPage(img._pdf.doc, img._pdf.wall).then(function (c) {
-        var R = window.MLPFix && window.MLPFix.sheets(c, img, [0.96, 1.04]); return R && R.rev < 4 ? { c: c, R: R } : null;
+        return work('fix.sheets', [c, img, [0.96, 1.04]]).then(function (R) { return R && R.rev < 4 ? { c: c, R: R } : null; });
       });
     }).catch(function () { return null; });
     return img._wallL;
@@ -1294,7 +1311,8 @@
     if (!img._mppP) img._mppP = wallLoose(img).then(function (W) {
       var c = W ? W.c : img, k = W ? W.R.s : 1;
       return pageLabels(c).then(function (L) {
-        return new Promise(function (ok) { window.MLPAutoWall.sheetMpp(c, L, 8, function (r) { ok(r && { mpp: r.mpp / k, n: r.n, src: r.src }); }); });
+        var S = awSmall(c), Ls = L.map(function (o) { return { s: o.s, x: o.x * S.k, y: o.y * S.k, ux: o.ux, uy: o.uy, h: o.h * S.k }; });
+        return work('aw.sheetMpp', [S.c, Ls, 8]).then(function (r) { return r && { mpp: r.mpp * S.k / k, n: r.n, src: r.src }; });
       });
     }).catch(function () { return null; });
     return img._mppP;
@@ -1422,7 +1440,9 @@
         if (tr !== t) return;
         var mine = rooms.filter(function (r) { return r.bg && r.bg.img === img; });
         var polys = mine.map(function (r) { var m = bgMatrix(r); return polyOf(r).map(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; }); });
-        var R = lim === img ? { s: 1, tx: 0, ty: 0, score: 0 } : window.MLPFix.register(polys, img, lim, 4 / mine[0].bg.mpp); // стены в радиусе 4 м вокруг обведённых комнат
+        // стены в радиусе 4 м вокруг обведённых комнат
+        return (lim === img ? Promise.resolve({ s: 1, tx: 0, ty: 0, score: 0 }) : work('fix.register', [polys, img, lim, 4 / mine[0].bg.mpp])).then(function (R) {
+        if (tr !== t) return;
         if (!R) { trMsg('Не удалось совместить этот лист с планом комнат. Попробуйте другой лист.'); return; }
         t.fx.reg = R; t.fx.rooms = mine; t.fx.polys = polys; t.fx.ppm = R.s / mine[0].bg.mpp; // пикселей листа на метр
         // PDF: тот же лист без линий и спецификация с него
@@ -1435,24 +1455,68 @@
               t.fx.leg = window.MLPFix.legend(sp, a[1].rows, sp._pdf.k); if (sp !== lim) t.fx.leg.table = null;
             });
           }, function () {});
+        });
       })
       .then(function () {
         if (tr !== t || !t.fx.reg) return;
-        // значки ищем на листе без линий, если там их не меньше половины (у некоторых проектов сами значки — линии)
-        var inRooms = function (A) { return A.reduce(function (s, g) { return s + g.pts.filter(function (p) { return fxWhere(t, p); }).length; }, 0); };
         // сколько спотов и софитов по ведомости — по этому выбирается порог цвета
         var need = (t.fx.spec || []).reduce(function (s, r) { return r.kind === 'spot' ? s + r.n : s; }, 0);
-        var A = window.MLPFix.auto(lim, t.fx.ppm, need), B = t.fx.ns ? window.MLPFix.auto(t.fx.ns, t.fx.ppm, need) : null;
-        // ...и если там самая большая серия одинаковых значков не меньше: мусор (обрывки линий) — много мелких групп
-        var big = function (G) { return G.reduce(function (m, g) { return Math.max(m, g.pts.length); }, 0); };
-        t.fx.useNs = !!B && inRooms(B) >= 0.5 * inRooms(A) && big(B) >= big(A);
-        // ведомость с условными знаками: тип, название и количество каждой метки — по самому похожему знаку
-        var G = t.fx.useNs ? B : A; if (t.fx.leg && t.fx.leg.syms.length) G = window.MLPFix.classify(t.fx.useNs ? t.fx.ns : lim, G, t.fx.leg, t.fx.ppm);
-        G.forEach(function (g) { fxAdd(t, g, g.kind !== 'spot' || g.pts.length >= 8); });
-        trMsg(t.fx.groups.length ? '' : 'Значки светильников автоматически не нашлись — нажмите на любой значок светильника на листе, найдём все такие же.');
+        trMsg('Ищем светильники на листе… (до полуминуты на больших проектах)');
+        return fxFind({ lim: lim, ns: t.fx.ns, ppm: t.fx.ppm, need: need, L: t.fx.leg && t.fx.leg.syms.length ? t.fx.leg : null }).then(function (r) {
+          if (tr !== t) return;
+          // значки ищем на листе без линий, если там их не меньше половины (у некоторых проектов сами значки — линии)
+          // и самая большая серия одинаковых значков не меньше: мусор (обрывки линий) — много мелких групп
+          var inRooms = function (A) { return A.reduce(function (s, g) { return s + g.pts.filter(function (p) { return fxWhere(t, p); }).length; }, 0); };
+          var big = function (G) { return G.reduce(function (m, g) { return Math.max(m, g.pts.length); }, 0); };
+          t.fx.useNs = !!r.B && inRooms(r.B) >= 0.5 * inRooms(r.A) && big(r.B) >= big(r.A);
+          // по ведомости (если есть условные знаки) — тип, название и количество каждой метки
+          var G = t.fx.useNs ? (r.CB || r.B) : (r.CA || r.A);
+          G.forEach(function (g) { fxAdd(t, g, g.kind !== 'spot' || g.pts.length >= 8); });
+          trMsg(t.fx.groups.length ? '' : 'Значки светильников автоматически не нашлись — нажмите на любой значок светильника на листе, найдём все такие же.');
+        });
       }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет.'); })
       .then(function () { if (tr === t) { t.fx.busy = false; traceUI(); drawTrace(); } });
   }
+  // Тяжёлое распознавание (совмещение листов, стены, масштаб, светильники — секунды и десятки секунд) — в фоновом
+  // потоке, чтобы страница не замирала. Поток — из Blob (скрипты лежат на другом домене, importScripts так можно);
+  // картинки уходят туда как ImageBitmap, там рисуются на OffscreenCanvas. Нет поддержки или ошибка — считаем здесь же.
+  // fn: 'fix.<функция MLPFix>' | 'aw.<функция MLPAutoWall>'; args — как у функции (canvas можно и внутри объекта)
+  // ?mlpsync=1 — без потока (тесты в headless Chrome: там виртуальное время, а поток считает в настоящем)
+  var wk = { w: null, off: /[?&]mlpsync=1/.test(location.search), n: 0, cb: {} };
+  function workSync(fn, args) {
+    var f = fn.split('.'), need = f[0] === 'fix' ? ['MLPFix', 'fixtures.js'] : ['MLPAutoWall', 'autowall.js'];
+    return (window[need[0]] ? Promise.resolve() : loadScript(BASE + need[1] + VER))
+      .then(function () { return new Promise(function (ok) { setTimeout(ok, 20); }); })
+      .then(function () { return window[need[0]][f[1]].apply(null, args); });
+  }
+  function work(fn, args) {
+    if (wk.off || typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || !window.createImageBitmap) return workSync(fn, args);
+    var isC = function (v) { return v && typeof v.getContext === 'function'; };
+    var bm = function (v) {
+      if (isC(v)) return createImageBitmap(v);
+      if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some(function (k) { return isC(v[k]); })) {
+        var o = {}, ks = Object.keys(v);
+        return Promise.all(ks.map(function (k) { return bm(v[k]); })).then(function (a) { ks.forEach(function (k, i) { o[k] = a[i]; }); return o; });
+      }
+      return Promise.resolve(v);
+    };
+    return Promise.all(args.map(bm)).then(function (a) {
+      if (!wk.w) {
+        var abs = function (f) { return JSON.stringify(new URL(BASE + f + VER, location.href).href); };
+        wk.w = new Worker(URL.createObjectURL(new Blob(['self.window = self; importScripts(' + abs('fixtures.js') + ', ' + abs('autowall.js') + ');' +
+          'var M = { fix: self.MLPFix, aw: self.MLPAutoWall };' +
+          'onmessage = function (e) { var q = e.data, r; try { var f = q.fn.split("."); r = { ok: M[f[0]][f[1]].apply(null, q.args) }; } catch (err) { r = { err: String(err) }; } postMessage({ id: q.id, r: r }); };'],
+          { type: 'text/javascript' })));
+        wk.w.onmessage = function (e) { var c = wk.cb[e.data.id]; delete wk.cb[e.data.id]; if (c) c(e.data.r); };
+        // поток не поднялся (политика сайта, старый браузер) — дальше всё здесь
+        wk.w.onerror = function (e) { if (e.preventDefault) e.preventDefault(); wk.off = true; var cs = wk.cb; wk.cb = {}; Object.keys(cs).forEach(function (k) { cs[k]({ err: 'worker' }); }); };
+      }
+      var id = ++wk.n;
+      return new Promise(function (ok) { wk.cb[id] = ok; wk.w.postMessage({ id: id, fn: fn, args: a }); })
+        .then(function (r) { if (r.err) { if (r.err === 'worker') wk.off = true; return workSync(fn, args); } return r.ok; });
+    }).catch(function () { wk.off = true; return workSync(fn, args); });
+  }
+  function fxFind(q) { return work('fix.find', [q]); }
   // пиксель листа → комната и метры в ней (или null — вне комнат: легенда, таблицы, надписи)
   function fxWhere(t, p) {
     var R = t.fx.reg, o = new DOMPoint((p[0] - R.tx) / R.s, (p[1] - R.ty) / R.s);

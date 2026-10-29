@@ -14,9 +14,12 @@
   // ---------- Картинка → серое, выравнивание ----------
   function grayOf(img, k) {
     var w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
-    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    // в фоновом потоке (Worker) document нет — там OffscreenCanvas; картинку туда шлют уже уменьшенной (k = 1),
+    // уменьшение там другое и тонкие стены теряются
+    var c = typeof document === 'undefined' ? new OffscreenCanvas(w, h) : document.createElement('canvas'); c.width = w; c.height = h;
     var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
-    var d = x.getImageData(0, 0, w, h).data, g = new Uint8Array(w * h);
+    var d = x.getImageData(0, 0, w, h).data;
+    var g = new Uint8Array(w * h);
     for (var i = 0; i < w * h; i++) g[i] = (d[4 * i] * 77 + d[4 * i + 1] * 150 + d[4 * i + 2] * 29) >> 8;
     return { g: g, w: w, h: h, d: d };
   }

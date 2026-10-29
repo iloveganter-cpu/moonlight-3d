@@ -9,8 +9,10 @@
   'use strict';
 
   function pixels(img, W) {
+    // в фоновом потоке картинка приходит готовыми пикселями { width, height, data }
+    if (!W && img.data) return { d: img.data, w: img.width, h: img.height, k: 1 };
     var k = W ? W / Math.max(img.width, img.height) : 1, w = Math.max(1, Math.round(img.width * k)), h = Math.max(1, Math.round(img.height * k));
-    var c = document.createElement('canvas'); c.width = w; c.height = h;
+    var c = typeof document === 'undefined' ? new OffscreenCanvas(w, h) : document.createElement('canvas'); c.width = w; c.height = h; // в Worker — OffscreenCanvas
     var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); x.drawImage(img, 0, 0, w, h);
     return { d: x.getImageData(0, 0, w, h).data, w: w, h: h, k: k };
   }
@@ -739,5 +741,13 @@
     res.sort(function (a, b) { return b.pts.length - a.pts.length; });
     return res;
   }
-  window.MLPFix = { legend: legend, classify: classify, spec: spec, register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist, full: full, chan: chan, patch: patch, sim: sim, occMask: occMask, colorMask: colorMask } };
+  // Поиск значков на листе целиком: оба варианта листа (с линиями и без), каждый — и по ведомости (L).
+  // q: { lim, ns, ppm, need, L } — картинки (canvas, ImageBitmap или { width, height, data }). Долгий: в фоновом потоке
+  function find(q) {
+    var cl = function (G) { return G.map(function (g) { var o = {}; for (var k in g) o[k] = g[k]; o.pts = g.pts.slice(); return o; }); };
+    var r = { A: auto(q.lim, q.ppm, q.need), B: q.ns ? auto(q.ns, q.ppm, q.need) : null };
+    if (q.L && q.L.syms.length) { r.CA = classify(q.lim, cl(r.A), q.L, q.ppm); r.CB = r.B && classify(q.ns, cl(r.B), q.L, q.ppm); }
+    return r;
+  }
+  window.MLPFix = { find: find, legend: legend, classify: classify, spec: spec, register: register, sheets: sheets, auto: auto, byClick: byClick, _: { edgeDist: edgeDist, full: full, chan: chan, patch: patch, sim: sim, occMask: occMask, colorMask: colorMask } };
 })();

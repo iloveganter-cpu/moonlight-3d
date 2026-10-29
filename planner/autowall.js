@@ -634,7 +634,7 @@
       // единица в той же надписи или отдельной надписью сразу правее
       var unit = !!m[2] || labels.some(function (q, j) { return j !== i && /^(м²|м2|м|m²|m2|2)$/i.test(q.s.trim()) && Math.abs(q.y - o.y) < 1.2 * o.h && q.x > o.x && q.x - o.x < o.s.length * 0.7 * o.h + 3 * o.h; });
       if (!unit) return;
-      var v = parseFloat(m[1].replace(',', '.')); if (v >= 0.5 && v <= 400) out.push({ v: v, x: o.x, y: o.y });
+      var v = parseFloat(m[1].replace(",", ".")); if (v >= 0.5 && v <= 400) out.push({ v: v, x: o.x, y: o.y, h: o.h });
     });
     return out;
   }
@@ -671,6 +671,85 @@
     return res.mpp ? res : null;
   }
 
+  // ---------- Сведения о комнате с чертежа ----------
+  // Надписи одной строки (части «H», «пом.», «=2 800» бывают отдельными) склеиваем: горизонтальные, на одной
+  // высоте, промежуток меньше двух высот букв. Итог: [{ s, x, y, h }] — x, y начала строки
+  function textLines(labels) {
+    var H = labels.filter(function (o) { return Math.abs(o.ux) > 0.9; }).sort(function (a, b) { return a.y - b.y || a.x - b.x; }), used = [], out = [];
+    H.forEach(function (o, i) {
+      if (used[i]) return; used[i] = true;
+      var row = [o], last = o;
+      for (;;) {
+        // ближайшая справа (индексы «H пот. =2 800» чуть ниже строки — берём по порядку слева направо)
+        var bj = -1;
+        for (var j = 0; j < H.length; j++) {
+          var q = H[j]; if (used[j] || Math.abs(q.y - o.y) > 0.6 * o.h || q.x <= last.x) continue;
+          var gap = (q.x - q.s.length * 0.27 * q.h) - (last.x + last.s.length * 0.27 * last.h);
+          if (gap < 2 * o.h && (bj < 0 || q.x < H[bj].x)) bj = j;
+        }
+        if (bj < 0) break;
+        row.push(H[bj]); used[bj] = true; last = H[bj];
+      }
+      out.push({ s: row.map(function (r) { return r.s; }).join(' ').replace(/\s+/g, ' '), x: row[0].x, y: o.y, h: o.h });
+    });
+    return out;
+  }
+  // Тип комнаты по слову (номера — как в списке планировщика): 0 гостиная, 1 спальня, 2 кухня, 3 детская,
+  // 4 кабинет, 5 санузел, 6 прихожая/коридор, 7 гардеробная
+  var KINDS = [[/гостин|зал\b|living/i, 0], [/спальн|bedroom/i, 1], [/кухн|столов|kitchen/i, 2], [/детск/i, 3], [/кабинет/i, 4],
+    [/сан\.?\s*уз|санузел|ванн|душ|туалет|с\/у|wc/i, 5], [/прихож|коридор|холл|тамбур|холл/i, 6], [/гардероб|кладов|постир|прачеч/i, 7]];
+  function kindOf(s) { for (var i = 0; i < KINDS.length; i++) if (KINDS[i][0].test(s)) return KINDS[i][1]; return -1; }
+  // poly, labels — как у scale. Итог: { kind (номер типа или -1), name, H (высота потолка, м) или null, src }
+  //  — название: слово-тип внутри контура, иначе — по экспликации: площадь, подписанная в комнате, есть в строке
+  //    «Гостиная … 21,9» (одинаковая площадь у разных названий — не берём);
+  //  — высота: «Hпом = 2 800» / «h потолка 2,7» внутри комнаты, иначе одна на весь лист («H перекрытия = 3 370»)
+  function roomInfo(poly, labels) {
+    var L = textLines(labels), res = { kind: -1, name: '', H: null };
+    var inside = L.filter(function (l) { return inPoly([l.x + l.s.length * 0.27 * l.h, l.y], poly); });
+    inside.some(function (l) { var k = kindOf(l.s); if (k >= 0 && l.s.length < 40) { res.kind = k; res.name = l.s.replace(/[\d,.\s]+(м2|м²|м)?\s*$/, '').trim(); res.src = 'plan'; return true; } return false; });
+    // строки экспликации: { no (номер помещения или null), name, v (площадь или null) }. Таблица: номер, название,
+    // площадь в одной строке, между ними бывают другие столбцы (далеко)
+    var rows = [];
+    labels.forEach(function (o) {
+      if (Math.abs(o.ux) < 0.9 || o.s.length > 30 || kindOf(o.s) < 0) return;
+      var row = labels.filter(function (q) { return q !== o && Math.abs(q.y - o.y) <= 0.6 * o.h && Math.abs(q.x - o.x) < 25 * o.h; });
+      var ar2 = row.filter(function (q) { return q.x > o.x && /^\d{1,3}[,.]\d{1,2}(\s*(м2|м²|м))?$/.test(q.s.trim()); }).sort(function (p, q) { return p.x - q.x; })[0];
+      var lead = o.s.match(/^(\d{1,2})\.?\s+/), no = lead ? +lead[1] : null;
+      if (no === null) { var nl = row.filter(function (q) { return q.x < o.x && /^\d{1,2}\.?$/.test(q.s.trim()); }).sort(function (p, q) { return q.x - p.x; })[0]; if (nl) no = parseInt(nl.s, 10); }
+      rows.push({ no: no, name: o.s.replace(/^\d{1,2}\.?\s+/, '').trim(), v: ar2 ? parseFloat(ar2.s.replace(',', '.')) : null });
+    });
+    var pick = function (cand, src) {
+      var ks = cand.map(function (r) { return kindOf(r.name); }).filter(function (k, i, a) { return a.indexOf(k) === i; });
+      if (ks.length === 1) { res.kind = ks[0]; res.name = cand[0].name; res.src = src; return true; }
+      return false;
+    };
+    // подписи помещений в комнате: площадь и номер над ней («11» / «14,6 м²»); в открытой зоне их несколько —
+    // от большей площади к меньшей (кухня-гостиная — гостиная). Номер ищем только у площади: просто цифры
+    // в комнате бывают размерами
+    if (res.kind < 0) areaLabels(labels).filter(function (a) { return inPoly([a.x, a.y], poly); }).sort(function (p, q) { return q.v - p.v; }).some(function (a) {
+      // (не «2» из «м²» — та мельче и почти на той же строке)
+      var tag = labels.filter(function (q) { return /^\d{1,2}$/.test(q.s.trim()) && q.h > 0.7 * a.h && a.y - q.y > 0.8 * a.h && a.y - q.y < 3 * a.h && Math.abs(q.x - a.x) < 4 * a.h; })
+        .sort(function (p, q) { return (a.y - p.y) - (a.y - q.y); })[0];
+      if (tag && pick(rows.filter(function (r) { return r.no === +tag.s.trim(); }), 'explication')) return true;
+      // по площади (в таблице её часто округляют до 0,1 — допуск 2 %)
+      return pick(rows.filter(function (r) { return r.v !== null && Math.abs(r.v - a.v) <= Math.max(0.06, 0.02 * a.v); }), 'explication');
+    });
+    var hRe = /[HНhн]\s*\.?\s*(пом|потол|перекр|пот\b|пот\.)[а-яё.]*\s*[=:]?\s*(\d[\d\s]{1,5}[.,]?\d*)\s*(мм|м)?/i;
+    var hv = function (l) {
+      var m = l.s.match(hRe); if (!m) return null;
+      var v = parseFloat(m[2].replace(/\s/g, '').replace(',', '.')); if (m[3] !== 'м' && v > 100) v /= 1000;
+      return v >= 2 && v <= 6 ? v : null;
+    };
+    var hin = inside.map(hv).filter(function (v) { return v; });
+    if (hin.length) res.H = hin[0];
+    else {
+      var all = L.map(hv).filter(function (v) { return v; }), cnt = {};
+      all.forEach(function (v) { cnt[v] = (cnt[v] || 0) + 1; });
+      var ks2 = Object.keys(cnt); if (ks2.length === 1) res.H = +ks2[0]; // разные высоты по листу — без подписи в комнате не угадываем
+    }
+    return res;
+  }
+
   // Масштаб всего чертежа: каждая подпись площади стоит внутри своей комнаты — обводим её отсюда же и считаем
   // масштаб по её стенам и площади; комнаты голосуют (медиана), одна неточно обведённая комнату не сбивает.
   // Сначала оценки по размерам стен (точнее), без них — по площадям. Итог: { mpp, n, src } или null
@@ -698,5 +777,5 @@
     return result();
   }
 
-  window.MLPAutoWall = { detect: detect, scale: scaleFrom, sheetMpp: sheetMpp, areaLabels: areaLabels, _: { skewOf: skewOf, contour: contour, vectorize: vectorize } };
+  window.MLPAutoWall = { detect: detect, scale: scaleFrom, sheetMpp: sheetMpp, roomInfo: roomInfo, textLines: textLines, areaLabels: areaLabels, _: { skewOf: skewOf, contour: contour, vectorize: vectorize } };
 })();

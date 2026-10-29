@@ -1181,7 +1181,7 @@
         'Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
       : tr.auto ? '<b>Шаг 1 из 2.</b> Нажмите внутри нужной комнаты — стены найдутся сами. Если план сложный, обведите углы вручную.'
       : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.') +
-      (tr.closed ? areaNote(tr) : '');
+      (tr.closed ? areaNote(tr) + infoNote(tr) : '');
     $('mlp-tmode').hidden = tr.closed || (!tr.auto && tr.pts.length > 0);
     $('mlp-tmode').textContent = tr.auto ? 'Обвести вручную' : 'Найти стены автоматически';
     $('mlp-tortho').parentNode.hidden = tr.auto && !tr.closed;
@@ -1326,6 +1326,8 @@
       .then(function (a) {
         if (tr !== t || !t.closed) return;
         var L = a[0], D = a[1], S = L.length ? window.MLPAutoWall.scale(t.pts, L) : null; t.scl = S;
+        // тип комнаты (норма освещённости) и высота потолка с чертежа — подставим при «Готово»
+        t.info = L.length ? window.MLPAutoWall.roomInfo(t.pts, L) : null;
         if (!t.mpp && !t.typed) {
           var m = D ? D.mpp : S && S.mpp;
           if (m) {
@@ -1340,6 +1342,14 @@
       }).catch(function () { if (tr === t && wait) trMsg(''); });
   }
   // площадь по контуру и по подписи на плане: сильно расходятся — контур, скорее всего, неточный
+  // что возьмём с чертежа для комнаты: тип (норма) и высоту потолка
+  function infoNote(t) {
+    var I = t.info; if (!I || (I.kind < 0 && !I.H)) return '';
+    var a = [];
+    if (I.kind >= 0) a.push('помещение — ' + esc(I.name || ROOMS[I.kind][0]) + ' (норма ' + ROOMS[I.kind][1] + ' лк)');
+    if (I.H) a.push('потолок ' + fmt(I.H, 2) + ' м');
+    return ' <span class="tarea">По чертежу: ' + a.join(', ') + '.</span>';
+  }
   function areaNote(t) {
     var S = t.scl, mpp = trMpp(); if (!S || !S.area || !mpp) return '';
     var a = M.area(t.pts) * mpp * mpp, d = a / S.area - 1;
@@ -1409,6 +1419,11 @@
     st.bg = { img: tr.img, mpp: mpp, ax: ax, p0: p0, sh: [bb.x0, bb.y0], show: true };
     $('mlp-bgshow').checked = true;
     st.shape = 'custom'; st.poly = poly;
+    // тип комнаты и высота потолка — с чертежа (клиент поправит в карточке, если не так)
+    var I = tr.info;
+    if (I && I.kind >= 0) { st.room = I.kind; st.E = ROOMS[I.kind][1] || st.E; }
+    if (I && I.H) st.H = I.H;
+    if (I && (I.kind >= 0 || I.H)) syncSide();
     if (add) { starterLights(); syncSide(); }
     tr = null; tp = { ptrs: {}, mode: null }; cv.style.cursor = 'default';
     traceUI(); sideMode(); renderDims(); renderGroups(); relayoutAll();

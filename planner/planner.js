@@ -1251,9 +1251,13 @@
     }
     return c._aw;
   }
+  // подписи площадей стираются перед поиском стен (autowall: eraseText) — надписи листа в пикселях уменьшенной картинки
   function awDetect(c, p) {
     var S = awSmall(c);
-    return work('aw.detect', [S.c, [p[0] * S.k, p[1] * S.k]]).then(function (r) {
+    if (!S.labP) S.labP = c._pdf ? pageLabels(c).then(function (L) {
+      return L.map(function (o) { return { s: o.s, x: o.x * S.k, y: o.y * S.k, ux: o.ux, uy: o.uy, h: o.h * S.k, w: o.w * S.k }; });
+    }).catch(function () { return null; }) : Promise.resolve(null);
+    return S.labP.then(function (L) { return work('aw.detect', [S.c, [p[0] * S.k, p[1] * S.k], L ? { text: L } : {}]); }).then(function (r) {
       if (r && r.pts) r.pts = r.pts.map(function (q) { return [q[0] / S.k, q[1] / S.k]; });
       return r;
     });
@@ -1277,7 +1281,7 @@
           var m = o.transform, p = V.convertToViewportPoint(m[4], m[5]), a = Math.atan2(m[1], m[0]), ux = Math.cos(a), uy = -Math.sin(a), h = Math.hypot(m[2], m[3]);
           // от начала строки — к середине: вдоль на полширины, вверх (поперёк) на треть высоты
           return { s: o.str.replace(/[À-ÿ]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xc0 + 0x410); }).trim(),
-            x: (p[0] + ux * o.width / 2 + uy * h * 0.35) * k, y: (p[1] + uy * o.width / 2 - ux * h * 0.35) * k, ux: ux, uy: uy, h: h * k };
+            x: (p[0] + ux * o.width / 2 + uy * h * 0.35) * k, y: (p[1] + uy * o.width / 2 - ux * h * 0.35) * k, ux: ux, uy: uy, h: h * k, w: o.width * k };
         });
       });
     });
@@ -1311,7 +1315,7 @@
     if (!img._mppP) img._mppP = wallLoose(img).then(function (W) {
       var c = W ? W.c : img, k = W ? W.R.s : 1;
       return pageLabels(c).then(function (L) {
-        var S = awSmall(c), Ls = L.map(function (o) { return { s: o.s, x: o.x * S.k, y: o.y * S.k, ux: o.ux, uy: o.uy, h: o.h * S.k }; });
+        var S = awSmall(c), Ls = L.map(function (o) { return { s: o.s, x: o.x * S.k, y: o.y * S.k, ux: o.ux, uy: o.uy, h: o.h * S.k, w: o.w * S.k }; });
         return work('aw.sheetMpp', [S.c, Ls, 8]).then(function (r) { return r && { mpp: r.mpp * S.k / k, n: r.n, src: r.src }; });
       });
     }).catch(function () { return null; });

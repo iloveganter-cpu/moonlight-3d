@@ -404,7 +404,19 @@
     // контур почти весь по осям — короткие косые куски (срезанный угол, размытый край) убираем, иначе после
     // удаления соседей такой кусок вытягивается в длинную диагональ через всю комнату
     var all = 0, axl = 0; L.forEach(function (l) { all += l.len; if (l.t !== 'd') axl += l.len; });
-    if (axl > 0.85 * all) L = L.filter(function (l) { return l.t !== 'd' || l.len >= 3 * minEdge; });
+    if (axl > 0.85 * all) {
+      L = L.filter(function (l) { return l.t !== 'd' || l.len >= 3 * minEdge; });
+      // короткий почти осевой (до 25°) — полотно открытой двери: комната затекла в проём до него. Убираем, соседние
+      // стены продлятся до пересечения. Длинный почти осевой (до 15°) — карман вместе с куском стены: по оси
+      var SN2 = Math.sin(15 * Math.PI / 180), SN3 = Math.sin(25 * Math.PI / 180), side = Math.sqrt(areaOf(P));
+      L = L.filter(function (l) { return l.t !== 'd' || l.len >= 0.3 * side || Math.min(Math.abs(l.d[0]), Math.abs(l.d[1])) >= SN3; });
+      L = L.map(function (l) {
+        if (l.t !== 'd') return l;
+        if (Math.abs(l.d[1]) < SN2) return mk('h', l.p[1], l.d[0] > 0 ? 1 : -1, null, null, l.len, l.e0, l.e1);
+        if (Math.abs(l.d[0]) < SN2) return mk('v', l.p[0], l.d[1] > 0 ? 1 : -1, null, null, l.len, l.e0, l.e1);
+        return l;
+      });
+    }
     if (L.length < 3) return null;
     function dirOf(l) { return l.t === 'h' ? [l.o, 0] : l.t === 'v' ? [0, l.o] : l.d; }
     function ptOf(l) { return l.t === 'h' ? [l.e0[0], l.c] : l.t === 'v' ? [l.c, l.e0[1]] : l.p; }
@@ -500,9 +512,41 @@
     return o;
   }
 
+  // Подпись площади («1,48 м²», часто в рамке) стоит внутри комнаты, но бывает прижата к стене — тогда рамка
+  // с текстом выглядит выступом стены и режет комнату. Стираем их с картинки (белым) до поиска стен; labels —
+  // надписи в пикселях исходной картинки, k — уменьшение
+  function eraseText(G, labels, k) {
+    areaLabels(labels).forEach(function (a) {
+      var o = a.o, h = o.h * k, ux = o.ux === undefined ? 1 : o.ux, uy = o.uy || 0, len = function (q) { return (q.w || q.s.length * 0.55 * q.h) / 2 * k; };
+      var cx = o.x * k, cy = o.y * k, hw = len(o), e = hw;
+      if (a.u) e = Math.max(e, ((a.u.x - o.x) * ux + (a.u.y - o.y) * uy) * k + len(a.u));
+      var A0 = -hw - 0.6 * h, A1 = e + 0.6 * h, B = h, R = Math.max(-A0, A1) + B;
+      for (var y = Math.max(0, Math.floor(cy - R)); y <= Math.min(G.h - 1, Math.ceil(cy + R)); y++) for (var x = Math.max(0, Math.floor(cx - R)); x <= Math.min(G.w - 1, Math.ceil(cx + R)); x++) {
+        var t = (x - cx) * ux + (y - cy) * uy, n = -(x - cx) * uy + (y - cy) * ux;
+        if (t >= A0 && t <= A1 && Math.abs(n) <= B) G.g[y * G.w + x] = 255;
+      }
+    });
+  }
+  // Две подписи площади в одной комнате — значит, захватили соседнюю через проём шириной почти во всю стену
+  // (кладовая, ниша): пробуем строже считать проёмы, берём первый вариант с одной подписью
   function detect(img, click, opt) {
+    var r = detect1(img, click, opt);
+    if (!opt || !opt.text || !r.pts || opt.alpha) return r;
+    var A = areaLabels(opt.text), cnt = function (P) {
+      var n = 0; A.forEach(function (a, i) { if (inPoly([a.x, a.y], P) && !A.slice(0, i).some(function (b) { return inPoly([b.x, b.y], P) && Math.hypot(b.x - a.x, b.y - a.y) < 2 * a.h; })) n++; });
+      return n;
+    };
+    if (cnt(r.pts) < 2) return r;
+    for (var i = 0, al = [0.85, 0.95]; i < al.length; i++) {
+      var o = {}; for (var key in opt) o[key] = opt[key]; o.alpha = al[i];
+      var r2 = detect1(img, click, o); if (r2.pts && cnt(r2.pts) === 1) { r2.info.split = al[i]; return r2; }
+    }
+    return r;
+  }
+  function detect1(img, click, opt) {
     opt = opt || {};
     var k = Math.min(1, MAXW / Math.max(img.width, img.height)), G0 = grayOf(img, k);
+    if (opt.text) eraseText(G0, opt.text, k);
     var ax = refineSkew(G0, skewOf(G0)), C = [G0.w / 2, G0.h / 2], G = deskew(G0, ax), w = G.w, h = G.h;
     var seed = rotP([click[0] * k, click[1] * k], ax, C);
     // буквы, цифры и значки — отдельные мелкие пятна: убираем до заливки узких мест, иначе слипнутся со стеной
@@ -602,9 +646,10 @@
       return X.every(function (q) { return nearP(q, lim); });
     }
     var Vs = vectorize(P, minEdge, opt.noStep ? 0 : Math.min(1.5 * wt, 0.12 * Math.sqrt(pick.s.area)));
-    if (!okV(Vs)) Vs = vectorize(P, minEdge);
-    if (!okV(Vs)) Vs = vectorize(P, minEdge / 2);
-    if (!okV(Vs)) Vs = dp(P, 2).map(function (i) { return P[i]; });
+    info.vec = 0;
+    if (!okV(Vs)) { Vs = vectorize(P, minEdge); info.vec = 1; }
+    if (!okV(Vs)) { Vs = vectorize(P, minEdge / 2); info.vec = 2; }
+    if (!okV(Vs)) { Vs = dp(P, 2).map(function (i) { return P[i]; }); info.vec = 3; }
     if (!okV(Vs)) return { error: 'shape', info: info };
     var pts = Vs.map(function (p) { var q = unrotP(p, ax, C); return [q[0] / k, q[1] / k]; });
     info.c = pick.v.c || 0; info.t = pick.v.t; info.sDoor = pick.r.sDoor; info.doors = pick.r.doors; info.closed = pick.r.closed; info.fb = pick.r.fallback; info.area = pick.s.area; info.wt = wt;
@@ -632,9 +677,9 @@
       var t = o.s.replace(/\s+/g, ' ').trim(), m = t.match(/^(\d{1,3}[.,]\d{1,2})\s*(м²|м2|м 2|м|m²|m2|кв\.?\s*м)?$/i);
       if (!m) return;
       // единица в той же надписи или отдельной надписью сразу правее
-      var unit = !!m[2] || labels.some(function (q, j) { return j !== i && /^(м²|м2|м|m²|m2|2)$/i.test(q.s.trim()) && Math.abs(q.y - o.y) < 1.2 * o.h && q.x > o.x && q.x - o.x < o.s.length * 0.7 * o.h + 3 * o.h; });
+      var u = null, unit = !!m[2] || labels.some(function (q, j) { var ok = j !== i && /^(м²|м2|м|m²|m2|2)$/i.test(q.s.trim()) && Math.abs(q.y - o.y) < 1.2 * o.h && q.x > o.x && q.x - o.x < o.s.length * 0.7 * o.h + 3 * o.h; if (ok) u = q; return ok; });
       if (!unit) return;
-      var v = parseFloat(m[1].replace(",", ".")); if (v >= 0.5 && v <= 400) out.push({ v: v, x: o.x, y: o.y, h: o.h });
+      var v = parseFloat(m[1].replace(",", ".")); if (v >= 0.5 && v <= 400) out.push({ v: v, x: o.x, y: o.y, h: o.h, o: o, u: u });
     });
     return out;
   }
@@ -768,7 +813,7 @@
     // комнаты обводятся по секунде и дольше — хватит трёх совпавших по размерам стен
     var i = 0, more = function () { return i < A.length && i < (maxN || 12) && agree(D, 0.02).n < 3; };
     function step() {
-      var r = detect(img, [A[i].x, A[i].y]); i++; if (!r.pts) return;
+      var r = detect(img, [A[i].x, A[i].y], { text: labels }); i++; if (!r.pts) return;
       var s = scaleFrom(r.pts, labels); if (s) (s.src === 'dims' ? D : S).push(s.mpp);
     }
     // cb — по комнате за раз, между ними страница отвечает (иначе подвисает на десяток секунд)

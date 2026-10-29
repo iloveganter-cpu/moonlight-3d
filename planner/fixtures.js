@@ -408,7 +408,8 @@
       if (grow) m = dilate(m, w, h); // волосяные значки рвутся на куски — склеиваем разрывы в пиксель
       var cs = [];
       comps(m, w, h, function (c) {
-        var L = Math.max(c.w, c.h); if (L < smin || L > smax || L / Math.max(1, Math.min(c.w, c.h)) > 3.5) return;
+        // тоньше ~6 см — штрих пунктира (LED-лента, граница), не значок светильника
+        var L = Math.max(c.w, c.h); if (L < smin || L > smax || Math.min(c.w, c.h) < 0.06 * ppm || L / Math.max(1, Math.min(c.w, c.h)) > 3.5) return;
         var T = crop(m, w, c), sig = new Float32Array(144);
         for (var y = 0; y < 12; y++) for (var x = 0; x < 12; x++) sig[y * 12 + x] = T.t[Math.floor((y + 0.5) * T.h / 12) * T.w + Math.floor((x + 0.5) * T.w / 12)];
         cs.push({ c: c, T: T, sig: sig, x: (c.x0 + c.x1) / 2, y: (c.y0 + c.y1) / 2 });
@@ -484,7 +485,7 @@
     var big = function (A) { return A.reduce(function (m, g) { return g.kind === 'spot' ? Math.max(m, g.pts.length) : m; }, 0); };
     // мягкие проходы долгие — не нужны, если строгий уже сошёлся с ведомостью или явно нашёл серию
     var A = autoAt(img, ppm, 60);
-    if (need ? Math.abs(spots(A) - need) <= 0.1 * need : big(A) >= 30) return A;
+    if (need ? Math.abs(spots(A) - need) <= 0.2 * need : big(A) >= 30) return A;
     var V = [A, autoAt(img, ppm, 35), autoAt(img, ppm, 35, true)];
     if (need) return V.reduce(function (a, b) { return Math.abs(spots(b) - need) < Math.abs(spots(a) - need) ? b : a; });
     return V.reduce(function (a, b) { return big(b) > 1.2 * big(a) ? b : a; });
@@ -504,13 +505,14 @@
     for (i = 0; i < w * h; i++) D[i] /= 3;
     return { D: D, w: w, h: h, k: k };
   }
-  function sheets(src, img) {
+  function sheets(src, img, sr) {
+    sr = sr || [0.6, 1.62]; // диапазон масштаба между листами
     var A = wallPts(src, 500, [], 1, 6000), Bp = wallPts(img, 500, [], 1, 6000);
     if (A.length < 50 || Bp.length < 50) return null;
     var base = img.width / src.width, Wc = 250, kI = Wc / Math.max(img.width, img.height), E = ptDist(Bp, kI, Math.round(img.width * kI), Math.round(img.height * kI));
     var kc = kI * base, pts = mix(A.filter(function (_, i) { return i % 3 === 0; }).map(function (p) { return [p[0] * kc, p[1] * kc]; }), []), best = 1e9, B = null, bx = 0, by = 0;
     pts.forEach(function (p) { bx = Math.max(bx, p[0]); by = Math.max(by, p[1]); });
-    for (var s = 0.6; s <= 1.62; s += 0.02)
+    for (var s = sr[0]; s <= sr[1] + 1e-9; s += 0.02)
       for (var tx = -Math.round(bx * s); tx <= E.w; tx += 2)
         for (var ty = -Math.round(by * s); ty <= E.h; ty += 2) {
           var sc = chamfer(E, pts, s, tx, ty, 6, 40, best);
@@ -712,6 +714,8 @@
           });
           if (ok2 && H2[0][0] === H2[1][0]) { put(H2[0][0], [H2[0][1], H2[1][1]], p); return; }
         }
+        // найденная люстра (крупный знак) меняет тип только на люстру ведомости: похожий кружок плафона — не повод
+        if (best !== null && g.kind === 'pendant' && L.syms[best].kind !== 'pendant') best = null;
         if (best !== null && bs >= 0.6) put(best, [p], p); else rest.push(p);
       });
     });

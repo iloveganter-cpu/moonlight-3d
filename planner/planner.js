@@ -90,7 +90,7 @@
     '.mlp .mk{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}.mlp .mk.good{background:#2e7d32}.mlp .mk.warn{background:#ef6c00}.mlp .mk.bad{background:#c62828}' +
     '.mlp .apt{width:100%;border-collapse:collapse;font-size:13px}.mlp .apt td,.mlp .apt th{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right}.mlp .apt td:first-child,.mlp .apt th:first-child{text-align:left}' +
     '.mlp .apt th{font-weight:400;color:var(--mute);font-size:12px}.mlp .apt tr[data-ri]{cursor:pointer}.mlp .apt tr[data-ri]:hover{background:var(--soft)}.mlp .apt tfoot td{font-weight:600;border-bottom:0}' +
-    '.mlp .fxrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}.mlp .fxrow .sw2{width:16px;height:16px;border-radius:3px;flex:none}.mlp .fxrow select{width:auto;height:30px}.mlp .fxrow .fxname{color:#666;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
+    '.mlp .fxrow{display:flex;gap:8px;align-items:center;margin:6px 0;font-size:13px}.mlp .fxrow .sw2{width:16px;height:16px;border-radius:3px;flex:none}.mlp .fxrow select{width:auto;height:30px}.mlp .tarea{display:block;margin-top:4px;color:#2e7d32}.mlp .tarea.bad{color:#c62828}.mlp .fxrow .fxname{color:#666;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' +
     '.mlp .fxspecs{margin:8px 0;padding:8px 10px;border-radius:8px;background:#fff4e0;font-size:13px}.mlp .fxspec{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:4px;color:#a14a00}.mlp .fxspec.ok{color:#1b7f3a}' +
     '.mlp .tlen{display:inline-flex;align-items:center;gap:6px}.mlp .tools .tlen input{width:110px;height:32px}' +
     '@media (max-width:900px){.mlp .wrap{grid-template-columns:minmax(0,1fr)}.mlp .main{order:-1}.mlp .sum{grid-template-columns:repeat(2,minmax(0,1fr))}}' +
@@ -1057,7 +1057,7 @@
     if (view3d) setView('plan');
     var mine = rooms.filter(function (r) { return r.bg && r.bg.img === img && (opt.add || r !== st); });
     tr = { img: img, pts: [], closed: false, sel: -1, axis: null, ortho: $('mlp-tortho').checked, hov: null, cw: 0, auto: true, found: false,
-      add: !!opt.add, mpp: mine.length ? mine[0].bg.mpp : 0,
+      add: !!opt.add, mpp: mine.length ? mine[0].bg.mpp : 0, mpp0: mine.length ? mine[0].bg.mpp : 0, // mpp0 — масштаб других комнат (mpp бывает подставлен по подписям плана)
       others: mine.map(function (r) { var m = bgMatrix(r); return polyOf(r).map(function (p) { var q = m.transformPoint(new DOMPoint(p[0], p[1])); return [q.x, q.y]; }); }) };
     tr.h = Hist(function () { return { key: JSON.stringify([tr.pts, tr.closed, tr.sel, tr.axis]) }; },
       function (s) { var o = JSON.parse(s.key); tr.pts = o[0]; tr.closed = o[1]; tr.sel = o[2]; tr.axis = o[3]; tr.hov = null; trMsg(''); drawTrace(); traceUI(); });
@@ -1170,14 +1170,18 @@
     if (!on) return;
     if (tr.fx) { fxUI(); return; }
     ['mlp-tundo', 'mlp-tredo', 'mlp-treset'].forEach(function (id) { $(id).hidden = false; }); $('mlp-tdone').textContent = 'Готово';
-    $('mlp-tstep').innerHTML = tr.closed && tr.mpp && !tr.typed
-      ? '<b>Шаг 2 из 2.</b> ' + (tr.found ? 'Стены найдены автоматически, масштаб — как у других комнат. ' : 'Масштаб — как у других комнат. ') +
-        'Проверьте контур (углы можно перетащить) и нажмите «Готово».'
+    var src = tr.autoMpp === 'sheet-dims' ? 'масштаб — по размерам стен на чертеже (сошлись ' + tr.autoN + ' ' + plural(tr.autoN, 'комната', 'комнаты', 'комнат') + ')'
+      : tr.autoMpp === 'dims' ? 'масштаб — по размерам стен на чертеже'
+      : tr.autoMpp === 'sheet-area' || tr.autoMpp === 'area' ? 'масштаб — по площадям, подписанным на чертеже (сверьте длину одной стены)' : 'масштаб — как у других комнат';
+    $('mlp-tstep').innerHTML = (tr.closed && tr.mpp && !tr.typed
+      ? '<b>Шаг 2 из 2.</b> ' + (tr.found ? 'Стены найдены автоматически, ' + src + '. ' : src[0].toUpperCase() + src.slice(1) + '. ') +
+        'Проверьте контур (углы можно перетащить) и длины стен, нажмите «Готово». Если длина неверна — нажмите на стену и введите свою.'
       : tr.closed
       ? (tr.found ? '<b>Шаг 2 из 2.</b> Стены найдены автоматически — проверьте контур: углы можно перетащить, лишний убрать двойным щелчком, не та комната — «Заново». ' : '<b>Шаг 2 из 2.</b> ') +
         'Нажмите на стену, длину которой знаете (она выделится синим), и введите её длину — по ней определится масштаб. Сверьте подписи остальных стен.'
       : tr.auto ? '<b>Шаг 1 из 2.</b> Нажмите внутри нужной комнаты — стены найдутся сами. Если план сложный, обведите углы вручную.'
-      : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.';
+      : '<b>Шаг 1 из 2.</b> Нажимайте по углам комнаты по порядку, по внутренней стороне стен. Чтобы замкнуть контур, нажмите на первую точку.') +
+      (tr.closed ? areaNote(tr) : '');
     $('mlp-tmode').hidden = tr.closed || (!tr.auto && tr.pts.length > 0);
     $('mlp-tmode').textContent = tr.auto ? 'Обвести вручную' : 'Найти стены автоматически';
     $('mlp-tortho').parentNode.hidden = tr.auto && !tr.closed;
@@ -1246,6 +1250,84 @@
       return window.MLPAutoWall.detect(img, p);
     });
   }
+  // Надписи листа PDF в пикселях картинки плана: { s, x, y (середина), ux, uy (направление строки), h }. План —
+  // лист освещения: добавляем надписи обмерного листа (площади, размеры стен там), переведённые на этот лист
+  function pageLabels(c) {
+    return c._pdf.doc.getPage(c._pdf.n).then(function (pg) {
+      var V = pg.getViewport({ scale: 1 }), k = c._pdf.k || c.width / V.width;
+      return pg.getTextContent().then(function (tc) {
+        return tc.items.filter(function (o) { return o.str && o.str.trim(); }).map(function (o) {
+          var m = o.transform, p = V.convertToViewportPoint(m[4], m[5]), a = Math.atan2(m[1], m[0]), ux = Math.cos(a), uy = -Math.sin(a), h = Math.hypot(m[2], m[3]);
+          // от начала строки — к середине: вдоль на полширины, вверх (поперёк) на треть высоты
+          return { s: o.str.replace(/[À-ÿ]/g, function (ch) { return String.fromCharCode(ch.charCodeAt(0) - 0xc0 + 0x410); }).trim(),
+            x: (p[0] + ux * o.width / 2 + uy * h * 0.35) * k, y: (p[1] + uy * o.width / 2 - ux * h * 0.35) * k, ux: ux, uy: uy, h: h * k };
+        });
+      });
+    });
+  }
+  // Обмерный лист в паре с листом освещения: для стен совмещение строгое (wallPrep); для подписей хватает и
+  // неточного (± толщина стены), если листы одного масштаба — так почти всегда (тонкие штрихованные стены
+  // строгую проверку не проходят). null — обмерного нет
+  function wallLoose(img) {
+    if (!img._pdf || !img._pdf.wall) return Promise.resolve(null);
+    if (!img._wallL) img._wallL = wallPrep(img).then(function (W) {
+      return W || pdfPage(img._pdf.doc, img._pdf.wall).then(function (c) {
+        var R = window.MLPFix && window.MLPFix.sheets(c, img, [0.96, 1.04]); return R && R.rev < 4 ? { c: c, R: R } : null;
+      });
+    }).catch(function () { return null; });
+    return img._wallL;
+  }
+  function planLabels(img) {
+    if (!img._pdf) return Promise.resolve([]);
+    if (!img._labP) img._labP = Promise.all([pageLabels(img), wallLoose(img)]).then(function (a) {
+      var L = a[0], W = a[1]; if (!W) return L;
+      return pageLabels(W.c).then(function (L2) {
+        var R = W.R; return L.concat(L2.map(function (o) { return { s: o.s, x: o.x * R.s + R.tx, y: o.y * R.s + R.ty, ux: o.ux, uy: o.uy, h: o.h * R.s }; }));
+      });
+    }).catch(function () { return []; });
+    return img._labP;
+  }
+  // Масштаб всего чертежа (м на пиксель картинки плана): комнаты с подписанной площадью обводятся сами и голосуют
+  // (autowall: sheetMpp); подписи площадей обычно на обмерном листе — считаем там и переводим. null — не вышло
+  function drawMpp(img) {
+    if (!img._pdf) return Promise.resolve(null);
+    if (!img._mppP) img._mppP = wallLoose(img).then(function (W) {
+      var c = W ? W.c : img, k = W ? W.R.s : 1;
+      return pageLabels(c).then(function (L) {
+        return new Promise(function (ok) { window.MLPAutoWall.sheetMpp(c, L, 8, function (r) { ok(r && { mpp: r.mpp / k, n: r.n, src: r.src }); }); });
+      });
+    }).catch(function () { return null; });
+    return img._mppP;
+  }
+  // Масштаб и площадь комнаты по подписям плана. Масштаб ещё не задан — подставляем: по всему чертежу (надёжнее),
+  // иначе по этой комнате; клиент видит длины стен и может поправить. Задан — только сверяем площадь
+  function scaleCheck(t) {
+    var wait = !t.mpp; if (wait && t.img._pdf) trMsg('Определяем масштаб по размерам на чертеже…');
+    (window.MLPAutoWall ? Promise.resolve() : loadScript(BASE + 'autowall.js' + VER))
+      .then(function () { return Promise.all([planLabels(t.img), t.mpp ? null : drawMpp(t.img)]); })
+      .then(function (a) {
+        if (tr !== t || !t.closed) return;
+        var L = a[0], D = a[1], S = L.length ? window.MLPAutoWall.scale(t.pts, L) : null; t.scl = S;
+        if (!t.mpp && !t.typed) {
+          var m = D ? D.mpp : S && S.mpp;
+          if (m) {
+            t.mpp = m; t.autoMpp = D ? 'sheet-' + D.src : S.src; t.autoN = D ? D.n : 0;
+            // выделяем стену с подписанным размером — в поле будет длина, как на чертеже
+            if (S && S.walls && S.walls.length) t.sel = S.walls.reduce(function (p, q) { return wallPx(q.i) > wallPx(p.i) ? q : p; }).i;
+            trKnown();
+          }
+        }
+        if (wait) trMsg('');
+        drawTrace(); traceUI();
+      }).catch(function () { if (tr === t && wait) trMsg(''); });
+  }
+  // площадь по контуру и по подписи на плане: сильно расходятся — контур, скорее всего, неточный
+  function areaNote(t) {
+    var S = t.scl, mpp = trMpp(); if (!S || !S.area || !mpp) return '';
+    var a = M.area(t.pts) * mpp * mpp, d = a / S.area - 1;
+    return ' <span class="tarea' + (Math.abs(d) > 0.07 ? ' bad' : '') + '">Площадь по контуру ' + fmt(a, 1) + ' м², по проекту ' + fmt(S.area, 1) + ' м²' +
+      (Math.abs(d) > 0.07 ? ' — контур, похоже, неточный: проверьте углы.' : ' ✓') + '</span>';
+  }
   // Автопоиск стен комнаты вокруг точки (autowall.js грузится при первом нажатии)
   function autoFind(p) {
     var t = tr; if (t.busy) return;
@@ -1266,6 +1348,7 @@
         t.closed = true; t.found = true; t.axis = r.axis; t.hov = null;
         t.sel = 0; for (var i = 1; i < t.pts.length; i++) if (wallPx(i) > wallPx(t.sel)) t.sel = i;
         trKnown(); trMsg(''); t.h.rec(); drawTrace(); traceUI(); if (!t.mpp) $('mlp-tlen').focus();
+        scaleCheck(t);
       }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет или обведите углы вручную.'); })
       .then(function () { t.busy = false; if (tr === t) cv.style.cursor = 'crosshair'; });
   }
@@ -1282,6 +1365,7 @@
       tr.closed = true; tr.hov = null;
       tr.sel = 0; for (var i = 1; i < tr.pts.length; i++) if (wallPx(i) > wallPx(tr.sel)) tr.sel = i; // по умолчанию — самая длинная стена
       trKnown(); if (!tr.mpp) setTimeout(function () { $('mlp-tlen').focus(); }, 0);
+      scaleCheck(tr);
       return;
     }
     if (idx >= 0) return;
@@ -1359,10 +1443,12 @@
         // сколько спотов и софитов по ведомости — по этому выбирается порог цвета
         var need = (t.fx.spec || []).reduce(function (s, r) { return r.kind === 'spot' ? s + r.n : s; }, 0);
         var A = window.MLPFix.auto(lim, t.fx.ppm, need), B = t.fx.ns ? window.MLPFix.auto(t.fx.ns, t.fx.ppm, need) : null;
-        t.fx.useNs = !!B && inRooms(B) >= 0.5 * inRooms(A);
+        // ...и если там самая большая серия одинаковых значков не меньше: мусор (обрывки линий) — много мелких групп
+        var big = function (G) { return G.reduce(function (m, g) { return Math.max(m, g.pts.length); }, 0); };
+        t.fx.useNs = !!B && inRooms(B) >= 0.5 * inRooms(A) && big(B) >= big(A);
         // ведомость с условными знаками: тип, название и количество каждой метки — по самому похожему знаку
         var G = t.fx.useNs ? B : A; if (t.fx.leg && t.fx.leg.syms.length) G = window.MLPFix.classify(t.fx.useNs ? t.fx.ns : lim, G, t.fx.leg, t.fx.ppm);
-        G.forEach(function (g) { fxAdd(t, g, g.kind === 'pendant' || g.pts.length >= 8); });
+        G.forEach(function (g) { fxAdd(t, g, g.kind !== 'spot' || g.pts.length >= 8); });
         trMsg(t.fx.groups.length ? '' : 'Значки светильников автоматически не нашлись — нажмите на любой значок светильника на листе, найдём все такие же.');
       }, function () { if (tr === t) trMsg('Не удалось загрузить распознавание — проверьте интернет.'); })
       .then(function () { if (tr === t) { t.fx.busy = false; traceUI(); drawTrace(); } });
@@ -1523,7 +1609,7 @@
       if (e.target.closest('#mlp-tdone')) { if (tr.fx) fxApply(); else finishTrace(); return; }
       if (e.target.closest('#mlp-tundo')) { tr.h.undo(); return; }
       if (e.target.closest('#mlp-tredo')) { tr.h.redo(); return; }
-      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.typed = false; $('mlp-tlen').value = ''; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
+      if (e.target.closest('#mlp-treset')) { tr.pts = []; tr.closed = false; tr.sel = -1; tr.axis = null; tr.auto = true; tr.found = false; tr.typed = false; tr.mpp = tr.mpp0; tr.autoMpp = null; tr.scl = null; $('mlp-tlen').value = ''; tr.h.rec(); trMsg(''); drawTrace(); traceUI(); return; }
       if (e.target.closest('#mlp-tmode')) { tr.auto = !tr.auto; trMsg(''); traceUI(); return; }
       if (e.target.closest('#mlp-tquit')) { endTrace(); return; }
     }

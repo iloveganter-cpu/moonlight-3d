@@ -607,5 +607,93 @@
     info.c = pick.v.c || 0; info.t = pick.v.t; info.sDoor = pick.r.sDoor; info.doors = pick.r.doors; info.closed = pick.r.closed; info.fb = pick.r.fallback; info.area = pick.s.area; info.wt = wt;
     return { pts: pts, axis: ax, info: info };
   }
-  window.MLPAutoWall = { detect: detect, _: { skewOf: skewOf, contour: contour, vectorize: vectorize } };
+  // ---------- Масштаб по подписям плана ----------
+  // В PDF дизайн-проекта размеры уже подписаны: площадь комнаты («21,90 м²») и размеры стен в мм («5 125»).
+  // poly — контур комнаты в пикселях; labels — надписи листа в тех же пикселях: { s, x, y (середина), ux, uy
+  // (направление строки), h (высота) }. Итог: { mpp (м на пиксель), src: 'dims' | 'area', votes, area, walls } или null.
+  //  — площадь: подпись внутри контура (если одна) → mpp = √(S / S_px);
+  //  — размеры: число параллельно стене у её середины и не дальше ~четверти её длины → mpp = мм / 1000 / длина;
+  //    оценки разных стен голосуют, берём самую частую (±2 %), нужно ≥ 2 стен — одиночная подпись бывает
+  //    размером проёма или куска стены;
+  //  — две стены без подтверждения площадью (± 8 %) не верим: совпадение бывает случайным (проёмы, куски цепочки)
+  function inPoly(p, P) {
+    var c = false; for (var i = 0, j = P.length - 1; i < P.length; j = i++) {
+      var a = P[i], b = P[j];
+      if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+    }
+    return c;
+  }
+  function areaLabels(labels) {
+    var out = [];
+    labels.forEach(function (o, i) {
+      var t = o.s.replace(/\s+/g, ' ').trim(), m = t.match(/^(\d{1,3}[.,]\d{1,2})\s*(м²|м2|м 2|м|m²|m2|кв\.?\s*м)?$/i);
+      if (!m) return;
+      // единица в той же надписи или отдельной надписью сразу правее
+      var unit = !!m[2] || labels.some(function (q, j) { return j !== i && /^(м²|м2|м|m²|m2|2)$/i.test(q.s.trim()) && Math.abs(q.y - o.y) < 1.2 * o.h && q.x > o.x && q.x - o.x < o.s.length * 0.7 * o.h + 3 * o.h; });
+      if (!unit) return;
+      var v = parseFloat(m[1].replace(',', '.')); if (v >= 0.5 && v <= 400) out.push({ v: v, x: o.x, y: o.y });
+    });
+    return out;
+  }
+  function scaleFrom(poly, labels) {
+    var n = poly.length, Apx = areaOf(poly), res = { walls: [] };
+    var ins = areaLabels(labels).filter(function (a) { return inPoly([a.x, a.y], poly); });
+    // одна подпись (или одинаковые) — площадь этой комнаты; разные — внутри несколько помещений, не берём
+    if (ins.length && ins.every(function (a) { return Math.abs(a.v - ins[0].v) < 0.05; })) { res.area = ins[0].v; res.mppA = Math.sqrt(ins[0].v / Apx); }
+    var C = [];
+    labels.forEach(function (o) {
+      var t = o.s.replace(/[\s  ]/g, ''); if (!/^\d{3,5}$/.test(t)) return;
+      var v = +t; if (v < 300 || v > 30000) return;
+      for (var i = 0; i < n; i++) {
+        var a = poly[i], b = poly[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 4 * o.h) continue;
+        var ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        if (Math.abs(ux * o.ux + uy * o.uy) < 0.97) continue; // подпись вдоль стены
+        var px = o.x - a[0], py = o.y - a[1], tt = px * ux + py * uy, dd = Math.abs(px * -uy + py * ux);
+        if (tt < 0.3 * L || tt > 0.7 * L || dd > Math.max(0.25 * L, 3 * o.h)) continue;
+        C.push({ mpp: v / 1000 / L, wall: i, v: v, d: dd });
+      }
+    });
+    // голосование: оценки разных стен, совпадающие в пределах 2 %
+    var best = null;
+    C.forEach(function (c) {
+      var ws = {}, s = 0, k = 0;
+      C.forEach(function (e) { if (Math.abs(e.mpp / c.mpp - 1) < 0.02 && !ws[e.wall]) { ws[e.wall] = e; s += e.mpp; k++; } });
+      if (!best || k > best.votes) best = { votes: k, mpp: s / k, walls: Object.keys(ws).map(function (w) { return { i: +w, mm: ws[w].v }; }) };
+    });
+    if (best && best.votes >= 2) { res.mppD = best.mpp; res.votes = best.votes; res.walls = best.walls; }
+    // две стены совпали случайно бывает (подписи проёмов, половина цепочки) — тогда нужна площадь в подтверждение
+    if (res.mppD && res.votes < 3 && !(res.mppA && Math.abs(res.mppD / res.mppA - 1) <= 0.08)) res.mppD = 0;
+    if (res.mppD) { res.mpp = res.mppD; res.src = 'dims'; }
+    else if (res.mppA) { res.mpp = res.mppA; res.src = 'area'; }
+    return res.mpp ? res : null;
+  }
+
+  // Масштаб всего чертежа: каждая подпись площади стоит внутри своей комнаты — обводим её отсюда же и считаем
+  // масштаб по её стенам и площади; комнаты голосуют (медиана), одна неточно обведённая комнату не сбивает.
+  // Сначала оценки по размерам стен (точнее), без них — по площадям. Итог: { mpp, n, src } или null
+  function sheetMpp(img, labels, maxN, cb) {
+    var A = areaLabels(labels), D = [], S = [];
+    // сколько оценок сходятся (± tol) с самой «поддержанной» — и их среднее
+    function agree(v, tol) {
+      var b = null; v.forEach(function (m) { var k = v.filter(function (e) { return Math.abs(e / m - 1) <= tol; }); if (!b || k.length > b.length) b = k; });
+      return b ? { n: b.length, mpp: b.reduce(function (s, e) { return s + e; }, 0) / b.length } : { n: 0 };
+    }
+    function result() {
+      var d = agree(D, 0.02); if (d.n >= 2 || (d.n === 1 && !S.length)) return { mpp: d.mpp, n: d.n, src: 'dims' };
+      // по площадям — только если хотя бы две комнаты совпали: подпись общей площади квартиры внутри комнаты бывает
+      var a = agree(D.concat(S), 0.05); return a.n >= 2 ? { mpp: a.mpp, n: a.n, src: 'area' } : null;
+    }
+    // комнаты обводятся по секунде и дольше — хватит трёх совпавших по размерам стен
+    var i = 0, more = function () { return i < A.length && i < (maxN || 12) && agree(D, 0.02).n < 3; };
+    function step() {
+      var r = detect(img, [A[i].x, A[i].y]); i++; if (!r.pts) return;
+      var s = scaleFrom(r.pts, labels); if (s) (s.src === 'dims' ? D : S).push(s.mpp);
+    }
+    // cb — по комнате за раз, между ними страница отвечает (иначе подвисает на десяток секунд)
+    if (cb) { (function go() { if (!more()) { cb(result()); return; } step(); setTimeout(go, 0); })(); return; }
+    while (more()) step();
+    return result();
+  }
+
+  window.MLPAutoWall = { detect: detect, scale: scaleFrom, sheetMpp: sheetMpp, areaLabels: areaLabels, _: { skewOf: skewOf, contour: contour, vectorize: vectorize } };
 })();

@@ -580,26 +580,32 @@
   // крупнее, чем на плане) и берём тип, название и количество из строки. Бра так не путаются со спотами,
   // влагостойкий «○» — с обычным «⊗». Метки внутри самой ведомости — образцы, не светильники.
   var SG = 20;
-  // подпись значка: маска в рамке → SG×SG, клетка «есть линия», если в её части картинки есть хоть пиксель
+  // подпись значка: маска в рамке → SG×SG, клетка «есть линия», если в её части картинки есть хоть пиксель.
+  // Значок меньше SG пикселей: клетке без своего пикселя — ближайший (иначе каждая 3–4-я клетка пустая — «полосы»)
   function sigOf(m, w, b) {
-    var s = new Uint8Array(SG * SG), n = 0;
-    for (var y = b[1]; y <= b[3]; y++) for (var x = b[0]; x <= b[2]; x++) {
-      if (!m[y * w + x]) continue;
-      var u = Math.min(SG - 1, Math.floor((x - b[0]) * SG / (b[2] - b[0] + 1))), v = Math.min(SG - 1, Math.floor((y - b[1]) * SG / (b[3] - b[1] + 1)));
-      if (!s[v * SG + u]) { s[v * SG + u] = 1; n++; }
+    var s = new Uint8Array(SG * SG), n = 0, bw = b[2] - b[0] + 1, bh = b[3] - b[1] + 1;
+    var rng = function (u, L) { var a = Math.floor(u * L / SG), e = Math.floor((u + 1) * L / SG) - 1; if (e < a) a = e = Math.min(L - 1, Math.floor((u + 0.5) * L / SG)); return [a, e]; };
+    for (var v = 0; v < SG; v++) {
+      var ry = rng(v, bh);
+      for (var u = 0; u < SG; u++) {
+        var rx = rng(u, bw), hit = 0;
+        for (var y = ry[0]; y <= ry[1] && !hit; y++) for (var x = rx[0]; x <= rx[1]; x++) if (m[(b[1] + y) * w + b[0] + x]) { hit = 1; break; }
+        if (hit) { s[v * SG + u] = 1; n++; }
+      }
     }
     return n ? s : null;
   }
-  function sigSim(a, b) { // полнота и точность с допуском в клетку, итог — среднее гармоническое
-    function cov(p, q) {
+  // oc — клетки метки, закрытые чужими линиями: там линии знака не видно, их нехватку не считаем
+  function sigSim(a, b, oc) { // полнота и точность с допуском в клетку, итог — среднее гармоническое
+    function cov(p, q, skip) {
       var hit = 0, all = 0;
       for (var y = 0; y < SG; y++) for (var x = 0; x < SG; x++) {
-        if (!p[y * SG + x]) continue; all++;
+        if (!p[y * SG + x] || (skip && skip[y * SG + x] && !q[y * SG + x])) continue; all++;
         outer: for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var X = x + dx, Y = y + dy; if (X >= 0 && Y >= 0 && X < SG && Y < SG && q[Y * SG + X]) { hit++; break outer; } }
       }
       return all ? hit / all : 0;
     }
-    var p = cov(a, b), r = cov(b, a); return p + r ? 2 * p * r / (p + r) : 0;
+    var p = cov(a, b), r = cov(b, a, oc); return p + r ? 2 * p * r / (p + r) : 0;
   }
   // плотная рамка линий в окне (по маске)
   function tight(m, w, x0, y0, x1, y1) {
@@ -673,16 +679,16 @@
   // Найденные группы → по значкам ведомости: каждая метка получает тип строки с самым похожим значком
   // (похожесть ≥ 0,6 и форма рамки близка); не похожие ни на что остаются как были
   function classify(img, groups, L, ppm) {
-    var P = full(img), w = P.w, h = P.h, masks = {}, out = [], byS = {};
+    var P = full(img), w = P.w, h = P.h, masks = {}, occs = {}, out = [], byS = {};
     // самый похожий значок ведомости; размер на плане — для разумности: люстра не меньше ~0,22 м, софит не больше ~0,25 м
     // (по одной форме маленький кружок софита не отличить от большого кружка люстры)
     var gsz = 0;
-    function bestSym(s, asp, sz) {
+    function bestSym(s, asp, sz, oc) {
       var bj = null, bv = 0;
       L.syms.forEach(function (o, j) {
         if (Math.abs(Math.log(asp / o.asp)) > 0.35) return;
         if (ppm && ((o.kind === 'pendant' && Math.min(sz, gsz) < 0.22 * ppm) || (o.kind === 'spot' && Math.max(sz, gsz) > 0.25 * ppm))) return;
-        var v = sigSim(s, o.sig); if (v > bv) { bv = v; bj = j; }
+        var v = sigSim(s, o.sig, oc); if (v > bv) { bv = v; bj = j; }
       });
       return [bj, bv];
     }
@@ -690,6 +696,7 @@
     var rests = groups.map(function () { return []; });
     groups.forEach(function (g, gi) {
       var key = g.color ? g.color.map(Math.round).join(',') : '', m = masks[key] || (masks[key] = g.color ? softMask(P, g.color) : null);
+      var om = m && (occs[key] || (occs[key] = occMask(P, g.color, m)));
       var rest = rests[gi]; gsz = Math.max(g.w, g.h) / (g.pair ? 2 : 1); // размер значка по группе — рамку на листе может раздуть сосед
       var put = function (j, pts, p0) { var e = byS[j] = byS[j] || { pts: [], src: g, from: [] }; pts.forEach(function (q) { e.pts.push(q); }); e.from.push([gi, p0]); };
       g.pts.forEach(function (p) {
@@ -702,9 +709,10 @@
           var b = symBox(m, w, h, p, hw, hh);
           if (b && g.pair) b = tight(m, w, Math.max(b[0], Math.round(p[0] - hw)), Math.max(b[1], Math.round(p[1] - hh)), Math.min(b[2], Math.round(p[0] + hw)), Math.min(b[3], Math.round(p[1] + hh)));
           var s = b && sigOf(m, w, b), asp = b && (b[2] - b[0] + 1) / (b[3] - b[1] + 1);
-          if (s) { var r0 = bestSym(s, asp, Math.max(b[2] - b[0], b[3] - b[1]) + 1); best = r0[0]; bs = r0[1]; }
+          var oc = s && sigOf(om, w, b);
+          if (s) { var r0 = bestSym(s, asp, Math.max(b[2] - b[0], b[3] - b[1]) + 1, oc); best = r0[0]; bs = r0[1]; }
         }
-        if (window.__fixdbg) { var D = window.__fixdbg.cls = window.__fixdbg.cls || []; D.push([Math.round(p[0]), Math.round(p[1]), b && [b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1], best, +bs.toFixed(2), s ? L.syms.map(function (o) { return +sigSim(s, o.sig).toFixed(2); }) : null]); }
+        if (window.__fixdbg) { var D = window.__fixdbg.cls = window.__fixdbg.cls || []; D.push([Math.round(p[0]), Math.round(p[1]), b && [b[0], b[1], b[2] - b[0] + 1, b[3] - b[1] + 1], best, +bs.toFixed(2), s ? L.syms.map(function (o) { return +sigSim(s, o.sig, oc).toFixed(2); }) : null]); }
         if ((best === null || bs < 0.6) && b && Math.max(asp, 1 / asp) >= 1.35) {
           // два значка вплотную («⊗» над «⊗»): обе половины похожи на один и тот же значок ведомости — два светильника
           var hor = asp > 1, H2 = [], ok2 = [0, 1].every(function (k2) {

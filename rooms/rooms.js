@@ -75,6 +75,41 @@ const ROOMS = {
     ],
     gain:{day:1.5},
   },
+  bath: {
+    title:'Ванная', dir:BASE+'bath/',
+    note:'Встраиваемые софиты Ambrella IP44, светильник EGLO Peguera над зеркалом и LED-лента в «парящем» потолке. Всё есть в каталоге.',
+    lights:[
+      {id:'down',   name:'Софиты Ambrella TN6630 ×5', prod:'IP44, GX53 · 630 сом', hs:[[.4525,.0728],[.6424,.0728],[.2595,.1115]]},
+      {id:'mirror', name:'Над зеркалом EGLO Peguera', prod:'Латунь и чёрный, 80 см · 9 300 сом', hs:[[.5352,.3094]]},
+      {id:'cove',   name:'Парящий потолок',           prod:'LED-лента в теневом зазоре', hs:[[.3095,.1565],[.8076,.0831]]},
+    ],
+    scenes:[
+      {name:'Утро',    k:4000, v:{down:1, mirror:1, cove:.5}},
+      {name:'У зеркала', k:4000, v:{mirror:1, down:.3}},
+      {name:'Ванна',   k:2700, v:{cove:.6, mirror:.15}},
+      {name:'Ночник',  k:2700, v:{cove:.2}},
+      {name:'Уборка',  k:5000, v:{down:1, mirror:1, cove:1}},
+    ],
+    gain:{day:1.2, cove:.45, down:1.6, mirror:1.4},
+  },
+  office: {
+    title:'Кабинет', dir:BASE+'office/',
+    note:'Настольная лампа EGLO Narices, магнитная система LUMINAIR и LED-подсветка полок стеллажа. Всё есть в каталоге.',
+    lights:[
+      {id:'table',  name:'Лампа EGLO Narices',      prod:'Латунный конус, E27 · 8 500 сом', hs:[[.352,.61]]},
+      {id:'linear', name:'Линейный модуль над столом', prod:'LUMINAIR 24 Вт · 2 200 сом', hs:[[.4906,.0689]]},
+      {id:'spots',  name:'Трековые споты ×3',       prod:'LUMINAIR 15 Вт · 1 800 сом', hs:[[.7468,.1253],[.2805,.1407],[.6757,.1405]]},
+      {id:'shelf',  name:'Подсветка стеллажа',      prod:'LED-лента в профиле под полками', hs:[[.4567,.2962],[.6833,.5256]]},
+    ],
+    scenes:[
+      {name:'Работа',  k:4000, v:{linear:1, table:.8, shelf:.4}},
+      {name:'Созвон',  k:4000, v:{linear:.8, spots:.6, shelf:.6}},
+      {name:'Чтение',  k:3000, v:{table:1, shelf:.5}},
+      {name:'Вечер',   k:2700, v:{shelf:.8, spots:.5, table:.4}},
+      {name:'Уборка',  k:5000, v:{table:1, linear:1, spots:1, shelf:1}},
+    ],
+    gain:{day:1.5, table:7, spots:3, shelf:.7},
+  },
 };
 const KPRE = [2700,3000,4000,5000,6500];
 const MAXP = 8;

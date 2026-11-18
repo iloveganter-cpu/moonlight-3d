@@ -60,20 +60,21 @@ const ROOMS = {
   },
   bedroom: {
     title:'Спальня', dir:BASE+'bedroom/',
-    note:'Люстра Ambrella LH55114, настольные лампы EGLO Viserbella и LED-подсветка изголовья. Всё есть в каталоге.',
+    note:'Люстра Ambrella LH55114, настольные лампы EGLO Viserbella, LED-подсветка изголовья и «парящий» потолок с лентой Geniled. Всё есть в каталоге.',
     lights:[
       {id:'pend',  name:'Люстра Ambrella LH55114',   prod:'Латунь, янтарное стекло, 6×E14 · 26 600 сом', hs:[[.5,.30]]},
       {id:'table', name:'Лампы EGLO Viserbella, пара', prod:'Золотой абажур · 6 200 сом', hs:[[.3357,.66],[.6643,.66]]},
       {id:'cove',  name:'Подсветка изголовья',       prod:'LED-лента, мягкий отражённый свет', hs:[[.5,.555]]},
+      {id:'float', name:'Парящий потолок',           prod:'Профиль для ГКЛ 0,9 с лентой (парящий) 3000 мм + лента Geniled 03464', hs:[[.2724,.2364],[.8521,.1863]]},
     ],
     scenes:[
-      {name:'Вечер',      k:2700, v:{table:.7, cove:.8, pend:.3}},
+      {name:'Вечер',      k:2700, v:{table:.7, cove:.8, pend:.3, float:.5}},
       {name:'Перед сном', k:2700, v:{table:.35, cove:.4}},
       {name:'Чтение',     k:3000, v:{table:1, cove:.3}},
-      {name:'Утро',       k:4000, v:{pend:1, cove:.5}},
-      {name:'Уборка',     k:5000, v:{pend:1, table:1, cove:1}},
+      {name:'Утро',       k:4000, v:{pend:1, cove:.5, float:.6}},
+      {name:'Уборка',     k:5000, v:{pend:1, table:1, cove:1, float:1}},
     ],
-    gain:{day:1.5},
+    gain:{day:1.5, float:.45},
   },
   bath: {
     title:'Ванная', dir:BASE+'bath/',
@@ -96,9 +97,9 @@ const ROOMS = {
     title:'Кабинет', dir:BASE+'office/',
     note:'Настольная лампа EGLO Narices, магнитная система LUMINAIR и LED-подсветка полок стеллажа. Всё есть в каталоге.',
     lights:[
-      {id:'table',  name:'Лампа EGLO Narices',      prod:'Латунный конус, E27 · 8 500 сом', hs:[[.352,.61]]},
-      {id:'linear', name:'Линейные модули ×2', prod:'LUMINAIR 24 Вт · 2 200 сом', hs:[[.3869,.0689],[.632,.0689]]},
-      {id:'spots',  name:'Трековые споты ×3',       prod:'LUMINAIR 15 Вт · 1 800 сом', hs:[[.2644,.1404],[.5128,.1399],[.7702,.1376]]},
+      {id:'table',  name:'Лампа EGLO Narices',      prod:'Латунный конус, E27 · 8 500 сом', hs:[[.5988,.64]]},
+      {id:'linear', name:'Линейные модули ×2', prod:'LUMINAIR 24 Вт · 2 200 сом', hs:[[.3869,.0689],[.6131,.0689]]},
+      {id:'spots',  name:'Трековые споты ×3',       prod:'LUMINAIR 15 Вт · 1 800 сом', hs:[[.2644,.1404],[.5226,.1269],[.7182,.1406]]},
       {id:'shelf',  name:'Подсветка стеллажа',      prod:'LED-лента в профиле под полками', hs:[[.4567,.2962],[.6833,.5256]]},
     ],
     scenes:[

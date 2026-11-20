@@ -21,7 +21,8 @@
 .ml-cat-help b{display:block;color:var(--ml-amber);font:600 14px/1.3 var(--ml-font);margin-bottom:4px}
 .ml-cat-help:hover{border-style:solid;background:color-mix(in srgb,var(--ml-amber) 8%,transparent)}
 /* шторка */
-.ml-sh{position:absolute;left:calc(100% - 18px);top:0;width:min(780px,calc(100vw - 380px));min-height:100%;padding-left:18px;pointer-events:none;visibility:hidden;z-index:1}
+.ml-sh{position:absolute;left:calc(100% - 18px);top:0;width:min(780px,calc(100vw - 380px));min-height:100%;padding-left:18px;pointer-events:none;visibility:hidden;z-index:1;display:flex}
+.ml-sh-in{flex:1}
 .ml-sh.open{pointer-events:auto;visibility:visible}
 .ml-sh-in{min-height:100%;height:100%;background:var(--ml-l);color:var(--ml-ink);border-radius:0 22px 22px 0;padding:30px 34px 34px;box-shadow:30px 30px 70px -30px rgba(0,0,0,.6);position:relative;
   clip-path:inset(0 100% 0 0 round 0 22px 22px 0);transition:clip-path .45s cubic-bezier(.2,.8,.2,1)}

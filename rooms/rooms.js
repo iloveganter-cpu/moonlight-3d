@@ -539,7 +539,8 @@ function extras(){
   const ML_LOCAL = {'/kranz_round': '/kranz'};
   const mlLocal = h => { if (!/\.tilda\.ws$/.test(location.host)) return h;
     const m = String(h).match(/^https?:\/\/(?:www\.)?moonlight-kg\.store(\/[^?#]*)/); return m && ML_LOCAL[m[1]] ? ML_LOCAL[m[1]] : h; };
-  D.querySelectorAll('a[href*="moonlight-kg.store/"]').forEach(a => { const n = mlLocal(a.getAttribute('href')); if (n !== a.getAttribute('href')) a.setAttribute('href', n); });
+  D.addEventListener('click', e => { const a = e.target.closest && e.target.closest('a[href*="moonlight-kg.store/"]'); if (!a) return;
+    const n = mlLocal(a.getAttribute('href')); if (n !== a.getAttribute('href')){ e.preventDefault(); e.stopPropagation(); location.href = n; } }, true);
   function mlCatalog(){
     const rec2 = D.querySelector('.t-rec[data-record-type="2861"]');
     if (!rec2 || rec2.querySelector('.ml-cat')) return;

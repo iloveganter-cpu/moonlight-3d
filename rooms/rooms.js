@@ -442,14 +442,15 @@ function extras(){
   setInterval(() => { if (pick === 'auto') apply(); }, 60000);
 
   // ---------- «Каталог» в шапке (вместо второй строки меню): слева после соцсетей; только ПК
-  { const lw = D.querySelector('.t3113__firstlevel__leftwrapper');
+  const addHcat = () => { const lw = D.querySelector('.t3113__firstlevel__leftwrapper');
     if (lw && !D.querySelector('.ml-hcat')){
       const a = D.createElement('a'); a.className = 'ml-hcat'; a.href = '/#ml-catalog';
       a.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span>Каталог</span>';
       a.onclick = e => { const rc = rec('2861'); if (!rc) return; e.preventDefault();
         scrollTo({top: rc.getBoundingClientRect().top + scrollY - ((D.querySelector('.t3113__header') || {}).offsetHeight || 80), behavior: RM ? 'auto' : 'smooth'}); };
       const soc = lw.querySelector('.t-sociallinks__wrapper'); soc ? soc.after(a) : lw.appendChild(a);
-    } }
+    } };
+  addHcat(); [600, 1500, 3000].forEach(t => setTimeout(addHcat, t));
 
   // ---------- фонарик: курсор — луч света в тёмной спальне
   // первый экран: обложка Тильды (T183 «Создаём атмосферу…», rec 206) скрыта, на её месте фонарик

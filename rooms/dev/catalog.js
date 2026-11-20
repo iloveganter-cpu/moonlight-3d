@@ -7,11 +7,12 @@
     if (!cat || !parts.length) return false;   // каталог ещё не загрузился
     // разделы и подразделы — из меню шапки (первое вхождение каждого раздела)
     const groups = [], seen = new Set();
-    D.querySelectorAll('.t3113 li').forEach(li => {
-      const a = li.querySelector(':scope > a.t-menu__link-item, :scope > .t-menu__link-item');
+    const nice = t => t === t.toUpperCase() ? t.charAt(0) + t.slice(1).toLowerCase() : t;
+    D.querySelectorAll('.t3113 li.t-menu-base__list-item').forEach(li => {
+      const a = li.querySelector('.t-menu__link-item');
       const subs = [...li.querySelectorAll('a.t-menusub__link-item')];
       if (!a || !subs.length) return;
-      const name = a.textContent.trim(); if (!name || seen.has(name)) return; seen.add(name);
+      const name = nice(a.textContent.trim()); if (!name || seen.has(name)) return; seen.add(name);
       groups.push({name, subs: subs.map(s => ({t: s.textContent.trim(), h: s.getAttribute('href') || '#'}))});
     });
     // бренды — из логотипов слайдера T738

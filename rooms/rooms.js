@@ -652,6 +652,9 @@ if (fine){
   const D = document, root = D.documentElement, AM = '#EFAC3E';
   const css = D.createElement('style');
   css.textContent = `html.ml-star-on,html.ml-star-on *{cursor:none!important}
+html.ml-star-on *::-webkit-slider-thumb{cursor:none!important}
+html.ml-star-on *::-webkit-slider-runnable-track{cursor:none!important}
+html.ml-star-on *::-moz-range-thumb{cursor:none!important}
 html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on input[type=email],html.ml-star-on textarea{cursor:text!important}
 .ml-star,.ml-star-ring,.ml-star-cv{position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647}
 .ml-star{width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;transition:opacity .2s}
@@ -769,6 +772,9 @@ if (fine){
   const D = document, root = D.documentElement;
   const css = D.createElement('style');
   css.textContent = `html.ml-spot-on,html.ml-spot-on *{cursor:none!important}
+html.ml-spot-on *::-webkit-slider-thumb{cursor:none!important}
+html.ml-spot-on *::-webkit-slider-runnable-track{cursor:none!important}
+html.ml-spot-on *::-moz-range-thumb{cursor:none!important}
 html.ml-spot-on input[type=text],html.ml-spot-on input[type=tel],html.ml-spot-on input[type=email],html.ml-spot-on textarea{cursor:text!important}
 .ml-spot-dim,.ml-spot-cv,.ml-spot-dot{position:fixed;pointer-events:none;z-index:2147483646}
 .ml-spot-dim{inset:0;opacity:0;transition:opacity .45s}

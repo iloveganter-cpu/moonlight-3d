@@ -574,19 +574,13 @@ function extras(){
         b.scrollIntoView({block:'nearest', inline:'center', behavior: RM ? 'auto' : 'smooth'}); };
       chips.appendChild(b);
     });
-    // ПК: строку фильтров листают стрелками, колесом мыши и перетаскиванием
+    // ПК: строку фильтров листают стрелками и перетаскиванием мышью
     const cw = box.querySelector('.ml-chips-w'), arL = cw.querySelector('.l'), arR = cw.querySelector('.r');
     const arrows = () => { const max = chips.scrollWidth - chips.clientWidth - 2;
       cw.classList.toggle('can-l', chips.scrollLeft > 2); cw.classList.toggle('can-r', chips.scrollLeft < max); };
     const step = d => chips.scrollBy({left: d * chips.clientWidth * .7, behavior: RM ? 'auto' : 'smooth'});
     arL.onclick = () => step(-1); arR.onclick = () => step(1);
     chips.addEventListener('scroll', arrows, {passive: true}); addEventListener('resize', arrows); arrows();
-    chips.addEventListener('wheel', e => {
-      if (chips.scrollWidth <= chips.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      const max = chips.scrollWidth - chips.clientWidth;
-      if ((e.deltaY < 0 && chips.scrollLeft <= 0) || (e.deltaY > 0 && chips.scrollLeft >= max - 1)) return; // на краю — крутим страницу дальше
-      e.preventDefault(); chips.scrollLeft += e.deltaY;
-    }, {passive: false});
     let drag = null;
     chips.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse' && e.button === 0) drag = {x: e.clientX, s: chips.scrollLeft, moved: false}; });
     addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x;
@@ -768,7 +762,8 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
     if (btn){
       const r = btn.getBoundingClientRect();
       const cx = r.left + r.width/2, cy = r.top + r.height/2;
-      const ox = RM ? 0 : (mx - cx) * .18, oy = RM ? 0 : (my - cy) * .25;
+      const still = RM || btn.closest('.ml-chips');   // в листаемой строке фильтров кнопки не тянем — иначе наезжают друг на друга
+      const ox = still ? 0 : (mx - cx) * .18, oy = still ? 0 : (my - cy) * .25;
       btn.style.translate = `${ox.toFixed(1)}px ${oy.toFixed(1)}px`;
       rx = lerp(rx, cx + ox*.5, K || .25); ry = lerp(ry, cy + oy*.5, K || .25);
       rw = lerp(rw, r.width + 12, K || .22); rh = lerp(rh, r.height + 12, K || .22);

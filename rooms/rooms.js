@@ -680,6 +680,8 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
     const b = el.closest('.t-btn,.t-btnflex,.t-submit,.ml-btn,.ml-fl-sw,.t-store__card__btn,.t-catalog__card__btn,button,a,[role=button]');
     if (!b) return null;
     const r = b.getBoundingClientRect(); if (r.height < 26 || r.height > 90 || r.width > 520 || r.width < 40) return null;
+    // настоящие кнопки, вкладки, переключатели — всегда (у невыбранной вкладки фона нет, но это тоже кнопка)
+    if (b.matches('button,[role=button],[role=tab],[role=radio],[role=menuitemradio],.t-btn,.t-btnflex,.t-submit')) return b;
     const cs = getComputedStyle(b), bg = cs.backgroundColor.match(/[\d.]+/g);
     const filled = bg && (bg.length < 4 || +bg[3] > .3), bordered = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none';
     return filled || bordered ? b : null;

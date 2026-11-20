@@ -18,7 +18,7 @@
     // бренды — из логотипов слайдера T738
     const brands = [...D.querySelectorAll('.t738__item')].map(it => {
       const a = it.querySelector('a'), i = it.querySelector('img'); const src = i && (i.getAttribute('data-original') || i.src);
-      return src && !/empty\//.test(src) ? {h: a ? a.getAttribute('href') : '', src, alt: (i.alt || '').trim()} : null; }).filter(Boolean);
+      return src && !/empty\//.test(src) ? {h: a ? a.getAttribute('href') : '', src, alt: (i.alt || '').trim()} : null; }).filter((b, k, arr) => b && arr.findIndex(x => x && x.src === b.src) === k);
     const ICONS = [
       '<path d="M12 2v5M6 10h12M6 10l-2 5h5l-3-5m12 0l2 5h-5l3-5M12 7l-2 3h4l-2-3M9 15h6l-1 4h-4z"/>',            // люстра
       '<path d="M2 6h20M5 6v3m14-3v3M7 6l2 7m8-7l-2 7M8 13h3l-1 4h-1zm5 0h3l-1 4h-1z"/>',                             // шинопровод

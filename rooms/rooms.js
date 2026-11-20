@@ -369,7 +369,7 @@ window.lrShow = async (id, light) => {
   if (!ROOMS[id]) return;
   if (st.room !== id) await loadRoom(id); else await window.lrReady;
   if (!ready) return;
-  st.day = false; st.k = 2700; $('mlK').value = st.k;
+  sceneName = ""; st.day = false; st.k = 2700; $('mlK').value = st.k;
   R.lights.forEach(l => { st.on[l.id] = l.id === light; });
   if (light) st.dim[light] = 1;
   sync(); kick();

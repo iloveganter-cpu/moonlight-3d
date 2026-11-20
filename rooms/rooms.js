@@ -383,7 +383,7 @@ window.lrReady = loadRoom(start);
   const mh = location.hash.match(/^#ml-room=(\w+)\.(\w+)/);
   if (mh){
     history.replaceState(null, '', location.pathname + location.search);
-    const toRooms = () => scrollTo({top: host.getBoundingClientRect().top + scrollY - ((document.querySelector('.t3113__header') || {}).offsetHeight || 80)});
+    const toRooms = () => scrollTo({top: document.getElementById('lrFrame').getBoundingClientRect().top + scrollY - ((document.querySelector('.t3113__header') || {}).offsetHeight || 80) - 16});
     setTimeout(() => { toRooms(); if (window.lrShow) window.lrShow(mh[1], mh[2]); }, 500);
     setTimeout(toRooms, 1600);
   }

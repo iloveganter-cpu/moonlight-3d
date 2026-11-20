@@ -797,6 +797,12 @@ function extras(){
       ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
     };
     host.innerHTML = '<div class="mk-load">Загружаем серию…</div>';
+    // шапка Тильды фиксированная: отступ сверху, чтобы крошки не уходили под неё
+    const pad = () => { const h = D.querySelector('.t3113__header'); if (!h) return;
+      const over = h.getBoundingClientRect().bottom - host.getBoundingClientRect().top;
+      host.style.paddingTop = Math.max(28, Math.round(over + 24)) + 'px'; };
+    if (scrollY < 5){ pad(); setTimeout(pad, 800); }
+    addEventListener('resize', () => { if (scrollY < 5) pad(); });
     fetch(BASE + 'kranz/data.json').then(r => r.json()).then(build).catch(() => { host.innerHTML = '<div class="mk-load">Не удалось загрузить товары. Обновите страницу.</div>'; });
 
     function build(data){

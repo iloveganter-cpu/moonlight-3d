@@ -1,5 +1,5 @@
 /* Moonlight: живые комнаты + курсор-огонёк. Вставка в Тильде (T123): <div id="ml-rooms"></div><script src="https://iloveganter-cpu.github.io/moonlight-3d/rooms/rooms.js"></script>
-   Только часть: data-only="cursor" / "extras,cursor"; отключить: data-extras="off", data-cursor="off". Фонарик: <div id="ml-flash"></div> (иначе сам встаёт перед T603) */
+   Только часть: data-only="cursor" / "extras,cursor"; отключить: data-extras="off", data-cursor="off"; курсор по умолчанию — трековый спот, старый огонёк: data-cursor="glow". Фонарик: <div id="ml-flash"></div> (иначе сам встаёт перед T603) */
 (() => {
 if (window.__mlRooms) return; window.__mlRooms = 1;
 const SCRIPT = document.currentScript;
@@ -643,11 +643,102 @@ if (fine){
 
 
 }
+function cursorSpot(){
+// ---------- курсор «трековый спот»: шина вверху экрана, по ней едет спот и светит лучом в курсор
+// страница чуть приглушена, светло там, куда смотрит спот; над товаром/кнопкой луч сужается и ярче; клик — вспышка
+const fine = matchMedia('(pointer:fine)').matches;
+if (fine){
+  const D = document, root = D.documentElement;
+  const css = D.createElement('style');
+  css.textContent = `html.ml-spot-on,html.ml-spot-on *{cursor:none!important}
+html.ml-spot-on input[type=text],html.ml-spot-on input[type=tel],html.ml-spot-on input[type=email],html.ml-spot-on textarea{cursor:text!important}
+.ml-spot-dim,.ml-spot-cv,.ml-spot-dot{position:fixed;pointer-events:none;z-index:2147483646}
+.ml-spot-dim{inset:0;opacity:0;transition:opacity .45s}
+.ml-spot-cv{left:0;top:0;opacity:0;transition:opacity .45s}
+.ml-spot-on.ml-spot-in .ml-spot-dim,.ml-spot-on.ml-spot-in .ml-spot-cv{opacity:1}
+.ml-spot-dot{left:0;top:0;z-index:2147483647;width:6px;height:6px;margin:-3px 0 0 -3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.5px rgba(20,20,22,.5),0 0 10px 2px #EFAC3E;opacity:0;transition:opacity .2s}
+.ml-spot-in .ml-spot-dot{opacity:1}
+.ml-spot-in .ml-spot-dot.off{opacity:0}`;
+  D.head.appendChild(css);
+  root.classList.add('ml-spot-on');
+  const dim = D.createElement('div'); dim.className = 'ml-spot-dim';
+  const cv = D.createElement('canvas'); cv.className = 'ml-spot-cv';
+  const dot = D.createElement('div'); dot.className = 'ml-spot-dot';
+  D.body.append(dim, cv, dot);
+  const ctx = cv.getContext('2d');
+  let W = 0, H = 0;
+  const rs = () => { const r = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W*r; cv.height = H*r; cv.style.width = W + 'px'; cv.style.height = H + 'px'; ctx.setTransform(r,0,0,r,0,0); dirty = 1; };
+  let dirty = 1; rs(); addEventListener('resize', rs);
+
+  const HOV = 'a,button,input,label,select,textarea,[role=button],[role=tab],[role=switch],.lr-hs,.js-product,.t-store__card,.t-catalog__card';
+  let mx = -500, my = -500, seen = false, hov = false, dark = true, beamOnly = false, clickAt = -1e9, lastProbe = 0;
+  // тон фона под курсором: ищем первый непрозрачный фон вверх по дереву
+  function probe(){
+    const el = D.elementFromPoint(mx, my); if (!el) return;
+    hov = !!el.closest(HOV);
+    beamOnly = !!el.closest('.fl-box');            // в фонарике свой луч — гасим приглушение и точку
+    let n = el, c = null;
+    while (n && n.nodeType === 1){ const b = getComputedStyle(n).backgroundColor; const m = b.match(/[\d.]+/g);
+      if (m && (m.length < 4 || +m[3] > .5)){ c = m; break; } n = n.parentElement; }
+    if (c) dark = (.2126*c[0] + .7152*c[1] + .0722*c[2]) / 255 < .45;
+    dot.classList.toggle('off', beamOnly);
+  }
+  addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    mx = e.clientX; my = e.clientY;
+    if (!seen){ seen = true; sx = fx = mx; fy = my; root.classList.add('ml-spot-in'); }
+    dot.style.transform = `translate3d(${mx}px,${my}px,0)`;
+  }, {passive:true});
+  addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') clickAt = performance.now(); });
+  D.addEventListener('mouseleave', () => root.classList.remove('ml-spot-in'));
+  D.addEventListener('mouseenter', () => { if (seen) root.classList.add('ml-spot-in'); });
+
+  let sx = 0, fx = 0, fy = 0, foc = 0, dimA = .3, last = '';
+  const k = RM ? 1 : 0;
+  function frame(t){
+    requestAnimationFrame(frame);
+    if (!seen) return;
+    if (t - lastProbe > 110){ lastProbe = t; probe(); }
+    const flash = RM ? 0 : Math.max(0, 1 - (t - clickAt)/350);
+    const nsx = lerp(sx, mx, k || .06), nfx = lerp(fx, mx, k || .16), nfy = lerp(fy, my, k || .16), nfoc = lerp(foc, hov ? 1 : 0, k || .12);
+    const nd = lerp(dimA, beamOnly ? 0 : dark ? .4 : .26, .08);
+    const moving = Math.abs(nsx - sx) + Math.abs(nfx - fx) + Math.abs(nfy - fy) + Math.abs(nfoc - foc) + Math.abs(nd - dimA) > .05;
+    sx = nsx; fx = nfx; fy = nfy; foc = nfoc; dimA = nd;
+    if (!moving && !flash && !dirty) return;
+    dirty = 0;
+    const R = lerp(210, 125, foc) * (1 + flash*.4);
+    const bg = `radial-gradient(ellipse ${R*1.25|0}px ${R|0}px at ${fx|0}px ${fy|0}px, rgba(255,214,150,${(.1 + foc*.08 + flash*.25)*(beamOnly ? 0 : 1)}) 0, transparent 60%, rgba(12,13,15,${dimA.toFixed(3)}) 100%)`;
+    if (bg !== last){ dim.style.background = bg; last = bg; }
+    ctx.clearRect(0, 0, W, H);
+    const RY = 0;                                    // шина у верхнего края
+    ctx.fillStyle = '#16181b'; ctx.fillRect(0, RY, W, 6);
+    ctx.fillStyle = 'rgba(255,255,255,.1)'; ctx.fillRect(0, RY + 5, W, 1);
+    const ang = Math.atan2(fy - (RY + 18), fx - sx);
+    ctx.save(); ctx.translate(sx, RY + 6);
+    ctx.fillStyle = '#16181b'; ctx.fillRect(-7, 0, 14, 7);
+    ctx.rotate(ang - Math.PI/2);
+    ctx.fillStyle = '#1e2125'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(-9, 4, 18, 30, 4) : ctx.rect(-9, 4, 18, 30); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(-9, 4, 1.5, 30);
+    ctx.fillStyle = `rgba(255,226,170,${.85 + flash*.15})`; ctx.beginPath(); ctx.ellipse(0, 34, 7, 2.6, 0, 0, 7); ctx.fill();
+    ctx.restore();
+    const ox = sx + Math.cos(ang)*34, oy = RY + 6 + Math.sin(ang)*34;
+    const len = Math.max(1, Math.hypot(fx - ox, fy - oy)), nx = -(fy - oy)/len, ny = (fx - ox)/len, w = R*.55;
+    const gr = ctx.createLinearGradient(ox, oy, fx, fy);
+    gr.addColorStop(0, `rgba(255,220,160,${.32 + flash*.3})`); gr.addColorStop(1, `rgba(255,220,160,${.05 + foc*.05})`);
+    ctx.fillStyle = gr; ctx.beginPath();
+    ctx.moveTo(ox + nx*6, oy + ny*6); ctx.lineTo(fx + nx*w, fy + ny*w); ctx.lineTo(fx - nx*w, fy - ny*w); ctx.lineTo(ox - nx*6, oy - ny*6); ctx.closePath();
+    ctx.filter = 'blur(6px)'; ctx.globalCompositeOperation = 'screen'; ctx.fill(); ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over';
+  }
+  addEventListener('scroll', () => { lastProbe = 0; }, {passive:true});
+  requestAnimationFrame(frame);
+}
+
+}
 const only = SCRIPT && SCRIPT.dataset.only, has = k => !only || only.split(',').includes(k);
 const go = () => {
   if (has('rooms')) rooms();
   if (has('extras') && !(SCRIPT && SCRIPT.dataset.extras === 'off')) extras();
-  if (has('cursor') && !(SCRIPT && SCRIPT.dataset.cursor === 'off')) cursor();
+  if (has('cursor') && !(SCRIPT && SCRIPT.dataset.cursor === 'off')) (SCRIPT && SCRIPT.dataset.cursor === 'glow' ? cursor : cursorSpot)();
 };
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', go) : go();
 })();

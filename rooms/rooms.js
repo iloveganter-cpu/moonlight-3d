@@ -687,7 +687,7 @@ function extras(){
     shop.bind(grid);
     let idx = null, curSlug = 'all', shown = HPAGE, req = 0;
     const pick = slug => { chips.querySelectorAll('button').forEach(x => { const on = x.dataset.s === slug; x.classList.toggle('on', on); x.setAttribute('aria-selected', on);
-      if (on && chips.scrollWidth > chips.clientWidth) chips.scrollTo({left: x.offsetLeft - (chips.clientWidth - x.offsetWidth) / 2, behavior: RM ? 'auto' : 'smooth'}); }); };
+      if (on && chips.scrollWidth > chips.clientWidth) chips.scrollTo({left: chips.scrollLeft + x.getBoundingClientRect().left - chips.getBoundingClientRect().left - (chips.clientWidth - x.offsetWidth) / 2, behavior: RM ? 'auto' : 'smooth'}); }); };
     const anim = () => { if (!RM){ grid.classList.remove('mk-in'); void grid.offsetWidth; grid.classList.add('mk-in'); } };
     function overview(){
       curSlug = 'all'; pick('all'); moreW.hidden = true; grid.classList.add('ml-hc-tiles');

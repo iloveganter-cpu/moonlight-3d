@@ -630,7 +630,7 @@ function extras(){
   // «Контакты» (/podval): если блок контактов есть на странице — плавно к нему; на тест-сайте страницы /podval нет
   D.addEventListener('click', e => { const a = e.target.closest && e.target.closest('a[href$="/podval"]'); if (!a) return;
     const rec = [...D.querySelectorAll('.t-rec')].find(r => /контактная информация/i.test(r.textContent));
-    if (rec){ e.preventDefault(); e.stopPropagation(); rec.scrollIntoView({behavior: 'smooth'}); }
+    if (rec){ e.preventDefault(); e.stopPropagation(); const hd = D.querySelector('.t3113__header, .tmenu-mobile'); window.scrollTo({top: rec.getBoundingClientRect().top + scrollY - (hd ? hd.offsetHeight : 80), behavior: 'smooth'}); }
     else if (/\.tilda\.ws$/.test(location.host)){ e.preventDefault(); location.href = 'https://moonlight-kg.store/podval'; } }, true);
   function mlCatalog(){
     const rec2 = D.querySelector('.t-rec[data-record-type="2861"]');

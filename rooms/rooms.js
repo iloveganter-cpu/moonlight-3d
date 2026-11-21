@@ -695,7 +695,7 @@ function extras(){
       hd.innerHTML = `<b>Все разделы</b><span>${ks.length} ${mlPlural(ks.length, 'раздел', 'раздела', 'разделов')} · ${mlFmt(total)} ${mlPlural(total, 'товар', 'товара', 'товаров')}</span>`;
       grid.innerHTML = ks.map(k => { const c = idx[k]; return `<a class="mk-card ml-hc-tile" href="/${k}" data-s="${k}">
   <div class="mk-img">${c.i ? `<img src="${esc(c.i)}" alt="" loading="lazy">` : ''}</div><h3>${esc(c.t)}</h3>
-  <div class="mk-sku">${c.n} ${mlPlural(c.n, 'товар', 'товара', 'товаров')}${c.min ? ` · от ${mlFmt(c.min)} сом` : ''}</div></a>`; }).join('');
+  <div class="mk-sku">${c.n} ${mlPlural(c.n, 'товар', 'товара', 'товаров')}</div></a>`; }).join('');
       anim();
     }
     function draw(again){
@@ -960,7 +960,7 @@ function extras(){
       <h1>${esc(data.title)}</h1>
       <p>${KR ? `${data.items.length} модели одной серии: выключатели, розетки, рамки до 5 постов, диммер и терморегулятор с Wi‑Fi.` : `${data.items.length} ${plural(data.items.length, 'модель', 'модели', 'моделей')} одной серии: выключатели, розетки, рамки и аксессуары в ${data.colors.length} ${plural(data.colors.length, 'цвете', 'цветах', 'цветах')}.`} Выберите цвет — каталог ниже перекрасится целиком.</p>
       <div class="mk-cols" role="radiogroup" aria-label="Цвет серии">${data.colors.map(c => sw(c, 'mk-col')).join('')}</div>
-      <div class="mk-stats"><div><b>${data.items.length}</b><span>${plural(data.items.length, 'модель', 'модели', 'моделей')}</span></div><div><b>${data.colors.length}</b><span>${plural(data.colors.length, 'цвет', 'цвета', 'цветов')}</span></div><div><b class="mk-min"></b><span>сом — цена от</span></div></div>
+      <div class="mk-stats"><div><b>${data.items.length}</b><span>${plural(data.items.length, 'модель', 'модели', 'моделей')}</span></div><div><b>${data.colors.length}</b><span>${plural(data.colors.length, 'цвет', 'цвета', 'цветов')}</span></div></div>
     </div>
     <div class="mk-hero-v"><div class="mk-glow"></div><img class="mk-hero-img" alt=""><img class="mk-hero-img mk-b" alt=""><div class="mk-hero-cap"></div></div>
   </section>
@@ -1002,7 +1002,6 @@ function extras(){
         const front = a.classList.contains('on') ? a : b, back = front === a ? b : a;
         if (front.dataset.src !== hv.i){ back.dataset.src = hv.i; back.onload = () => { back.classList.add('on'); front.classList.remove('on'); }; back.src = hv.i; }
         $('.mk-hero-cap').textContent = `${HERO.n} · ${c.n}`;
-        $('.mk-min').textContent = fmt(Math.min(...data.items.map(x => (x.c[st.col] || {}).p || Infinity)));
       }
       function filter(){
         $$('.mk-cats button').forEach(b => b.setAttribute('aria-selected', b.dataset.cat === st.cat));
@@ -1109,7 +1108,7 @@ function extras(){
       <h1 class="${(w => w >= 11 ? 'mc-h-l' : w >= 9 ? 'mc-h-m' : '')(Math.max(...data.title.split(/\s+/).map(w => w.length)))}">${esc(data.title)}</h1>
       ${data.about ? `<p>${esc(data.about)}</p>` : ''}
       ${blist.length > 1 ? `<div class="mk-cols mc-brands" role="radiogroup" aria-label="Бренд">${['all'].concat(blist).map(b => `<button type="button" class="mk-col mc-br" role="radio" data-br="${esc(b)}">${b === 'all' ? 'Все бренды' : esc(b)}<small>${b === 'all' ? items.length : brands[b]}</small></button>`).join('')}</div>` : ''}
-      <div class="mk-stats"><div><b>${items.length}</b><span>${plural(items.length, 'товар', 'товара', 'товаров')}</span></div>${blist.length ? `<div><b>${blist.length}</b><span>${plural(blist.length, 'бренд', 'бренда', 'брендов')}</span></div>` : ''}${prices.length ? `<div><b>${fmt(Math.min(...prices))}</b><span>сом — цена от</span></div>` : ''}</div>
+      <div class="mk-stats"><div><b>${items.length}</b><span>${plural(items.length, 'товар', 'товара', 'товаров')}</span></div>${blist.length ? `<div><b>${blist.length}</b><span>${plural(blist.length, 'бренд', 'бренда', 'брендов')}</span></div>` : ''}</div>
     </div>
     <div class="mk-hero-v mc-hero-v" role="button" tabindex="0" aria-label="Открыть товар"><div class="mk-glow"></div><img class="mk-hero-img" alt=""><img class="mk-hero-img mk-b" alt=""><div class="mk-hero-cap"></div><div class="mc-hero-dots">${show.map((_, i) => `<i data-i="${i}"></i>`).join('')}</div></div>
   </section>

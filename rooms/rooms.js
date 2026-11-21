@@ -706,7 +706,7 @@ function extras(){
       moreW.firstChild.textContent = `Показать ещё ${Math.min(HPAGE, list.length - shown)} из ${list.length - shown}`;
       if (again) anim(); else grid.classList.remove('mk-in');
     }
-    function show(slug){
+    function hcShow(slug){
       if (slug === 'all' || !idx[slug]){ overview(); return; }
       curSlug = slug; shown = HPAGE; pick(slug); grid.classList.remove('ml-hc-tiles');
       const c = idx[slug];
@@ -717,9 +717,9 @@ function extras(){
         .catch(() => { if (my === req) grid.innerHTML = '<div class="mk-load ml-hc-load">Не удалось загрузить товары. Попробуйте ещё раз.</div>'; });
     }
     moreW.firstChild.onclick = () => { const y = scrollY; shown += HPAGE; draw(false); scrollTo(0, y); };
-    grid.addEventListener('click', e => { const t = e.target.closest('.ml-hc-tile'); if (t && !e.ctrlKey && !e.metaKey && !e.shiftKey){ e.preventDefault(); show(t.dataset.s);
+    grid.addEventListener('click', e => { const t = e.target.closest('.ml-hc-tile'); if (t && !e.ctrlKey && !e.metaKey && !e.shiftKey){ e.preventDefault(); hcShow(t.dataset.s);
       const top = hc.getBoundingClientRect().top; if (top < 0) scrollBy({top: top - ((D.querySelector('.t3113__header') || {}).offsetHeight || 80) - 70, behavior: RM ? 'auto' : 'smooth'}); } });
-    chips.addEventListener('click', e => { const b = e.target.closest('button'); if (b && !chips.classList.contains('drag')) show(b.dataset.s); });
+    chips.addEventListener('click', e => { const b = e.target.closest('button'); if (b && !chips.classList.contains('drag')) hcShow(b.dataset.s); });
     grid.innerHTML = '<div class="mk-load ml-hc-load">Загружаем каталог…</div>';
     fetch(BASE + 'cats/index.json').then(r => r.json()).then(j => {
       idx = j;

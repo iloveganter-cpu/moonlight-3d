@@ -421,7 +421,7 @@ function extras(){
     const now = new Date(), mode = pick === 'auto' ? autoMode(now.getHours()) : pick;
     root.dataset.tod = mode;
     const hm = now.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-    btn.innerHTML = `<i></i>${TOD[mode].name}<small>${pick === 'auto' ? '· ' + hm : '· вручную'}</small>`;
+    btn.innerHTML = `<i></i>${TOD[mode].name}<small>${pick === 'auto' ? '· ' + hm : '· изменить'}</small>`;
     btn.setAttribute('aria-label', `Время суток на сайте: ${TOD[mode].name}. Изменить`);
     menu.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.m === pick));
     if (mode !== last && window.lrPlan){ window.lrPlan(TOD[mode].plan || {scene:'evening'}); }

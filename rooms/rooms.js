@@ -15,7 +15,7 @@ const mlStudio = (() => {
   if (/[?&]studio=off\b/.test(q)) ls.set('ml-studio-on', null);
   else if (/[?&]studio\b/.test(q)) ls.set('ml-studio-on', '1');
   const frame = /[?&]studio-frame\b/.test(q);
-  const on = frame || ls.get('ml-studio-on') === '1';
+  let on = frame || ls.get('ml-studio-on') === '1';
   let draft = null; try { draft = JSON.parse(ls.get('ml-studio-draft') || 'null'); } catch (e){}
   const head = window.mlStudio && typeof window.mlStudio === 'object' ? window.mlStudio : {};
   const cfg = Object.assign({}, head, on && draft ? draft : {});
@@ -142,14 +142,24 @@ const mlStudio = (() => {
     D.readyState === 'loading' ? D.addEventListener('DOMContentLoaded', ready, {once: true}) : ready();
   }
   apply(cfg);
-  if (on && !frame){
-    const go = () => { const s = D.createElement('script'); s.src = BASE + 'studio.js?v=' + Date.now(); D.head.appendChild(s); };
-    D.readyState === 'loading' ? D.addEventListener('DOMContentLoaded', go) : go();
+  const go = () => { if (window.__mlStudioUI || D.getElementById('mls-js')) return; const s = D.createElement('script'); s.id = 'mls-js'; s.src = BASE + 'studio.js?v=' + Date.now(); D.head.appendChild(s); };
+  if (on && !frame) D.readyState === 'loading' ? D.addEventListener('DOMContentLoaded', go) : go();
+  // тайный вход: Ctrl+Shift+S (на любой раскладке) или 5 быстрых кликов по большому логотипу в подвале
+  if (!frame){
+    const open = () => { on = true; ls.set('ml-studio-on', '1'); ls.set('ml-studio-min', null);
+      if (window.__mlStudioUI) return;
+      // черновик мог остаться с прошлого раза — применяем его и открываем панель
+      try { const d = JSON.parse(ls.get('ml-studio-draft') || 'null'); if (d) apply(Object.assign({}, head, d)); } catch (e){}
+      go(); };
+    D.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyS'){ e.preventDefault(); open(); } });
+    let n = 0, t = 0;
+    D.addEventListener('click', e => { if (!e.target.closest || !e.target.closest('.ml-bw .ml-logo')) return;
+      const now = Date.now(); n = now - t < 600 ? n + 1 : 1; t = now; if (n >= 5){ n = 0; open(); } });
   }
   if (frame) addEventListener('storage', e => { if (e.key !== 'ml-studio-draft') return; let d = {}; try { d = JSON.parse(e.newValue || '{}'); } catch (x){}
     const prev = window.mlStudioCfg, next = Object.assign({}, head, d);
     if (prev.cursor !== next.cursor || prev.flash !== next.flash) location.reload(); else apply(next); });
-  return {on, frame, head, cfg, apply, groups, FONTS, COLORS, ls};
+  return {get on(){ return on; }, frame, head, cfg, apply, groups, FONTS, COLORS, ls};
 })();
 window.mlStudioApi = mlStudio;
 

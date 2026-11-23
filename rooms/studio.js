@@ -31,7 +31,7 @@
   };
   // цвета «как в HEAD сейчас» — стартовая точка
   const headC = {}; Object.entries(S.COLORS).forEach(([k, v]) => { const x = (S.head.colors && S.head.colors[k]) || css0.getPropertyValue(v).trim(); headC[k] = /^#[0-9a-f]{3,8}$/i.test(x) ? x.toUpperCase() : DEF_C[k]; });
-  let st = Object.assign({}, S.cfg); st.colors = Object.assign({}, headC, S.cfg.colors || {});
+  const cfg0 = window.mlStudioCfg || S.cfg; let st = Object.assign({}, cfg0); st.colors = Object.assign({}, headC, cfg0.colors || {});
   const hist = [];
   const save = () => { S.ls.set('ml-studio-draft', JSON.stringify(st)); };
   const push = () => { hist.push(JSON.stringify(st)); if (hist.length > 60) hist.shift(); };

@@ -125,13 +125,19 @@ const mlStudio = (() => {
     gs.forEach(g => { const i = ord.indexOf(g.id); g.els.forEach(e => e.style.order = i + 1); if ((b.hidden || []).includes(g.id)) g.els.forEach(e => e.classList.add('mls-hide')); });
   }
   const st = D.createElement('style'); st.id = 'mls-css';
-  function apply(c){
+  // применяем только то, что поменялось: цвета и CSS — мгновенно, анимации/отступы/блоки — лишь когда менялись их настройки
+  let prev = null, lastCss = '';
+  const AK = ['anim', 'dur', 'stagger', 'dist', 'ease'];
+  const ch = (keys, a, b) => !a || keys.some(k => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
+  function apply(c, force){
     c = c || cfg; window.mlStudioCfg = c;
     Object.entries(COLORS).forEach(([k, v]) => { c.colors && c.colors[k] ? root.style.setProperty(v, c.colors[k]) : root.style.removeProperty(v); });
     font(c.font); font(c.headFont);
-    st.textContent = '.mls-order{display:flex!important;flex-direction:column}.mls-hide{display:none!important}' + css(c);
+    const t = '.mls-order{display:flex!important;flex-direction:column}.mls-hide{display:none!important}' + css(c);
+    if (t !== lastCss){ st.textContent = lastCss = t; }
     if (!st.isConnected) D.head.appendChild(st);
-    const ready = () => { anim(c); spacing(c.spacing); blocks(c); };
+    const p = force ? null : prev; prev = JSON.parse(JSON.stringify(c));
+    const ready = () => { if (ch(AK, p, c)) anim(c); if (ch(['spacing'], p, c)) spacing(c.spacing); if (ch(['blocks'], p, c)) blocks(c); };
     D.readyState === 'loading' ? D.addEventListener('DOMContentLoaded', ready, {once: true}) : ready();
   }
   apply(cfg);

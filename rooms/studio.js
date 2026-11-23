@@ -14,9 +14,29 @@
   const save = () => { S.ls.set('ml-studio-draft', JSON.stringify(st)); };
   const push = () => { hist.push(JSON.stringify(st)); if (hist.length > 60) hist.shift(); };
   let reloadNeeded = false;
-  function set(k, v, opts){ push(); const old = st[k]; if (v === '' || v === undefined) delete st[k]; else st[k] = v;
+  // quiet — идёт жест (ползунок, палитра): без перерисовки панели и без записи в историю, сайт обновляется раз в кадр
+  let raf = 0;
+  const applySoon = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; S.apply(st); }); };
+  function set(k, v, quiet){ if (!quiet) push(); const old = st[k]; if (v === '' || v === undefined) delete st[k]; else st[k] = v;
     if ((k === 'cursor' || k === 'flash') && old !== v) reloadNeeded = true;
-    save(); S.apply(st); sync(); }
+    save(); if (quiet) applySoon(); else { S.apply(st); sync(); } }
+  // ---------- цвет: HEX ↔ HSV
+  const hex2rgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) || 0); };
+  const rgb2hex = a => '#' + a.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('').toUpperCase();
+  function rgb2hsv([r, g, b]){ r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0; if (d){ h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
+    return [h, mx ? d / mx : 0, mx]; }
+  function hsv2rgb(h, s, v){ const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5), f(3), f(1)].map(x => x * 255); }
+  const hsl2hex = (h, s, l) => { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return rgb2hex([f(0), f(8), f(4)].map(x => x * 255)); };
+  const hex2hsl = hx => { const [r, g, b] = hex2rgb(hx).map(x => x / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+    if (!d) return [0, 0, l]; const s = d / (1 - Math.abs(2 * l - 1)); let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; return [h, s, l]; };
+  // родственные оттенки: светлее/темнее того же цвета и соседние тона
+  function tones(hx){ const [h, s, l] = hex2hsl(hx), out = [];
+    [.14, .24, .36, .5, .64, .76, .88].forEach(L => out.push(hsl2hex(h, s, L)));
+    [-40, -20, 20, 40].forEach(d => out.push(hsl2hex((h + d + 360) % 360, s, l)));
+    [Math.max(0, s - .3), Math.min(1, s + .3)].forEach(S2 => out.push(hsl2hex(h, S2, l)));
+    return out.filter((x, i, a) => a.indexOf(x) === i && x !== hx.toUpperCase()); }
+  let openPk = null, pkHsv = null;
 
   // ---------- описание всех настроек
   const T = [
@@ -120,7 +140,19 @@ input[type=range]{width:100%;accent-color:#BCD0E6}
 .seg button:hover:not(.on){border-color:rgba(188,208,230,.6)}
 select{width:100%;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px;font:13px inherit}
 .col{display:flex;gap:8px;align-items:center}
-.col input[type=color]{width:42px;height:32px;border:1px solid rgba(255,255,255,.18);border-radius:8px;background:none;padding:2px}
+.sw{width:46px;height:34px;flex:0 0 auto;border-radius:9px;border:1px solid rgba(255,255,255,.22);background:var(--c);padding:0;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25)}
+.sw.on,.sw:hover{border-color:#BCD0E6;box-shadow:0 0 0 2px rgba(188,208,230,.35),inset 0 0 0 2px rgba(0,0,0,.25)}
+.pk{margin-top:10px;padding:10px;border-radius:12px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08)}
+.sv{position:relative;height:150px;border-radius:9px;cursor:crosshair;touch-action:none;background:linear-gradient(to top,#000,transparent),linear-gradient(to right,#fff,hsl(var(--h) 100% 50%))}
+.sv i,.hue i{position:absolute;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.5);pointer-events:none}
+.hue{position:relative;height:14px;margin-top:12px;border-radius:7px;cursor:ew-resize;touch-action:none;background:linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)}
+.hue i{top:50%}
+.tl{margin:10px 0 5px;color:#8E97A1;font-size:11px;letter-spacing:.04em}
+.tones{display:flex;flex-wrap:wrap;gap:5px}
+.tones button{width:24px;height:24px;border-radius:7px;border:1px solid rgba(255,255,255,.18);background:var(--c);padding:0}
+.tones button:hover{transform:scale(1.15);border-color:#fff}
+.tones small{color:#6E7780;font-size:11px}
+.sv,.hue,.sv *{cursor:crosshair}
 .col input[type=text]{flex:1;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:8px;padding:7px 9px;font:13px/1 ui-monospace,monospace;text-transform:uppercase}
 .pr{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
 .pr button{text-align:left;border:1px solid rgba(255,255,255,.1);background:linear-gradient(160deg,rgba(255,255,255,.05),rgba(255,255,255,.01));color:#EEF1F4;border-radius:14px;padding:12px;font:600 13px/1.25 inherit;min-height:74px}
@@ -167,18 +199,52 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const toast = t => { const e = $('.toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.remove('on'), 1800); };
   const get = k => k.startsWith('colors.') ? st.colors[k.slice(7)] : st[k];
-  const put = (k, v) => { if (k.startsWith('colors.')){ push(); st.colors[k.slice(7)] = v; save(); S.apply(st); sync(); } else set(k, v); };
+  const put = (k, v, quiet) => { if (!k.startsWith('colors.')) return set(k, v, quiet);
+    if (!quiet) push(); st.colors[k.slice(7)] = v; save(); if (quiet) applySoon(); else { S.apply(st); sync(); } };
   let tab = S.ls.get('ml-studio-tab') || 'look';
 
   nav.innerHTML = T.map(t => `<button data-t="${t.id}"><span>${t.ic}</span>${t.name}</button>`).join('');
   nav.onclick = e => { const b = e.target.closest('button'); if (!b) return; tab = b.dataset.t; S.ls.set('ml-studio-tab', tab); render(); };
 
+  function picker(k, c){
+    if (!pkHsv || pkHsv.k !== k) pkHsv = {k, hsv: rgb2hsv(hex2rgb(c))};
+    const [h, s, v] = pkHsv.hsv;
+    return `<div class="pk" data-pk="${k}">
+      <div class="sv" style="--h:${h.toFixed(1)}"><i style="left:${s * 100}%;top:${(1 - v) * 100}%"></i></div>
+      <div class="hue"><i style="left:${h / 3.6}%"></i></div>
+      <div class="tl">Оттенки этого цвета</div>
+      <div class="tones">${tones(c).map(t => `<button data-tone="${t}" style="--c:${t}" title="${t}"></button>`).join('')}</div>
+      <div class="tl">Пробовали</div><div class="tones recent">${(recent[k] || []).map(t => `<button data-tone="${t}" style="--c:${t}" title="${t}"></button>`).join('') || '<small>пока пусто</small>'}</div>
+    </div>`;
+  }
+  const recent = {};
+  const remember = (k, c) => { const r = recent[k] = (recent[k] || []).filter(x => x !== c); r.unshift(c); r.length = Math.min(r.length, 10); };
+  // живое обновление открытой палитры без перерисовки
+  function pkPaint(k, c){
+    const f = main.querySelector(`[data-sw="${k}"]`); if (f) f.style.setProperty('--c', c);
+    const t = main.querySelector(`input[type=text][data-k="${k}"]`); if (t && sh.activeElement !== t) t.value = c;
+    const pk = main.querySelector(`[data-pk="${k}"]`); if (!pk || !pkHsv) return;
+    const [h, s, v] = pkHsv.hsv; const sv = pk.querySelector('.sv'); sv.style.setProperty('--h', h.toFixed(1));
+    sv.firstElementChild.style.left = s * 100 + '%'; sv.firstElementChild.style.top = (1 - v) * 100 + '%';
+    pk.querySelector('.hue i').style.left = h / 3.6 + '%';
+  }
+  main.addEventListener('pointerdown', e => {
+    const zone = e.target.closest('.sv,.hue'); if (!zone) return;
+    const pk = zone.closest('.pk'), k = pk.dataset.pk; e.preventDefault(); zone.setPointerCapture(e.pointerId); push();
+    const move = ev => { const r = zone.getBoundingClientRect(), x = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)), y = Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height));
+      const hsv = pkHsv.hsv; if (zone.classList.contains('sv')){ hsv[1] = x; hsv[2] = 1 - y; } else hsv[0] = x * 360;
+      const c = rgb2hex(hsv2rgb(hsv[0], hsv[1], hsv[2])); put(k, c, true); pkPaint(k, c); };
+    move(e);
+    const up = () => { zone.removeEventListener('pointermove', move); zone.removeEventListener('pointerup', up); zone.removeEventListener('pointercancel', up);
+      remember(k, get(k)); const y = main.scrollTop; render(); main.scrollTop = y; };
+    zone.addEventListener('pointermove', move); zone.addEventListener('pointerup', up); zone.addEventListener('pointercancel', up);
+  });
   function field(f){
     const v = get(f.k), has = v !== undefined && v !== null && v !== '';
     const reset = has && !f.k.startsWith('colors.') && f.type !== 'btn' ? `<button class="x" data-reset="${f.k}">сбросить</button>` : '';
     if (f.k.startsWith('colors.')){ const c = v || '#000000', dflt = headC[f.k.slice(7)];
       return `<div class="f"><label>${f.t}${c.toUpperCase() !== dflt ? `<button class="x" data-cdef="${f.k}">как было</button>` : ''}</label>${f.h ? `<small>${f.h}</small>` : ''}
-        <div class="col"><input type="color" data-k="${f.k}" value="${esc(c.length === 4 ? '#' + [...c.slice(1)].map(x => x + x).join('') : c.slice(0, 7))}"><input type="text" data-k="${f.k}" value="${esc(c)}" maxlength="9"></div></div>`; }
+        <div class="col"><button class="sw${openPk === f.k ? ' on' : ''}" data-sw="${f.k}" style="--c:${esc(c)}" title="Открыть палитру"></button><input type="text" data-k="${f.k}" value="${esc(c)}" maxlength="7" spellcheck="false"></div>${openPk === f.k ? picker(f.k, c) : ''}</div>`; }
     if (f.type === 'btn') return `<div class="f"><button class="big sec" data-a="${f.k}">${f.label}</button></div>`;
     if (f.type === 'font') return `<div class="f"><label>${f.t}${reset}</label><select data-k="${f.k}">${FONT_OPTS.map(([val, n]) => `<option value="${esc(val)}"${String(v || '') === val ? ' selected' : ''} style="font-family:'${esc(val)}'">${esc(n)}</option>`).join('')}</select></div>`;
     if (f.type === 'seg') return `<div class="f"><div class="l">${f.t}${reset}</div>${f.h ? `<small>${f.h}</small>` : ''}<div class="seg" data-k="${f.k}">${f.o.map(([val, n]) => `<button data-v='${JSON.stringify(val)}' class="${(has ? v === val : val === '') ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
@@ -262,18 +328,28 @@ ${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий �
     else if (tab === 'done') main.innerHTML = doneUI();
     else main.innerHTML = (reloadNeeded && tab === 'fx' ? '<div class="note warn">Нужна перезагрузка, чтобы увидеть курсор/фонарик. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : '') + F[tab].map(field).join('');
   }
-  function sync(){ if (tab !== 'blocks') { const y = main.scrollTop; const a = sh.activeElement; const k = a && a.dataset && a.dataset.k; if (a && a.type === 'range') { const f = Object.values(F).flat().find(x => x.k === k); const lab = a.closest('.f').querySelector('.v'); if (lab && f) lab.textContent = (+a.value).toString().replace('.', ',') + ' ' + f.u; return; } render(); main.scrollTop = y; } }
+  function sync(){ const y = main.scrollTop; render(); main.scrollTop = y; }
 
+  // ползунок: пока тянут — меняется только подпись и сайт; отпустили — шаг в историю и перерисовка (появится «сбросить»)
+  let gesture = false;
   main.addEventListener('input', e => { const el = e.target, k = el.dataset.k; if (!k) return;
-    if (el.type === 'range'){ set(k, +el.value); return; }
-    if (el.type === 'color'){ put(k, el.value.toUpperCase()); return; }
-    if (el.type === 'text' && /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(el.value.trim())) put(k, el.value.trim().toUpperCase()); });
-  main.addEventListener('change', e => { const el = e.target; if (el.tagName === 'SELECT') set(el.dataset.k, el.value); });
+    if (el.type === 'range'){ if (!gesture){ push(); gesture = true; }
+      const f = Object.values(F).flat().find(x => x.k === k), lab = el.closest('.f').querySelector('.v');
+      if (lab && f) lab.textContent = (+el.value).toString().replace('.', ',') + ' ' + f.u;
+      set(k, +el.value, true); return; }
+    if (el.type === 'text'){ let v = el.value.trim(); if (v && v[0] !== '#') v = '#' + v;
+      if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)){ v = v.toUpperCase(); if (!gesture){ push(); gesture = true; } if (pkHsv && pkHsv.k === k) pkHsv.hsv = rgb2hsv(hex2rgb(v)); put(k, v, true); pkPaint(k, v); } } });
+  main.addEventListener('change', e => { const el = e.target;
+    if (el.tagName === 'SELECT'){ set(el.dataset.k, el.value); return; }
+    if (gesture){ gesture = false; if (el.dataset.k && el.dataset.k.startsWith('colors.')) remember(el.dataset.k, get(el.dataset.k)); sync(); } });
+  main.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.type === 'text') e.target.blur(); });
   sh.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const seg = b.closest('.seg'); if (seg){ set(seg.dataset.k, JSON.parse(b.dataset.v)); return; }
+    if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
+    if (b.dataset.tone){ const k = b.closest('.pk').dataset.pk; pkHsv = {k, hsv: rgb2hsv(hex2rgb(b.dataset.tone))}; remember(k, b.dataset.tone); put(k, b.dataset.tone); return; }
     if (b.dataset.reset){ set(b.dataset.reset, ''); return; }
-    if (b.dataset.cdef){ put(b.dataset.cdef, headC[b.dataset.cdef.slice(7)]); return; }
+    if (b.dataset.cdef){ pkHsv = null; put(b.dataset.cdef, headC[b.dataset.cdef.slice(7)]); return; }
     if (b.dataset.p != null){ push(); const p = PRESETS[+b.dataset.p]; const cur = st.cursor, fl = st.flash;
       st = Object.assign({cursor: cur, flash: fl}, JSON.parse(JSON.stringify(p.c)), {blocks: st.blocks}); st.colors = Object.assign({}, headC, p.c.colors || {});
       Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(st); toast('Пресет «' + p.n + '»'); replay(); return; }

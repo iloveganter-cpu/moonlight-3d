@@ -1253,7 +1253,7 @@ function cursorStar(){
 // над обычной ссылкой лучи вытягиваются и звезда встаёт на 45°; клик — вспышка точек
 const fine = matchMedia('(pointer:fine)').matches;
 if (fine){
-  const D = document, root = D.documentElement, AM = '#BCD0E6';
+  const D = document, root = D.documentElement, AM = '#BCD0E6', AD = '#5F7896';  // AD — на светлом фоне (утро/день): графитовая звезда с тёмно-лунным контуром
   const css = D.createElement('style');
   css.textContent = `html.ml-star-on,html.ml-star-on *{cursor:none!important}
 html.ml-star-on *::-webkit-slider-thumb{cursor:none!important}
@@ -1267,6 +1267,7 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
 .ml-star-in .ml-star.off{opacity:0}
 .ml-star-ring{opacity:0;transition:opacity .22s;box-shadow:0 0 0 1.5px ${AM},0 0 24px color-mix(in srgb,${AM} 60%,transparent),inset 0 0 14px color-mix(in srgb,${AM} 28%,transparent)}
 .ml-star-ring.on{opacity:1}
+.ml-star-light .ml-star-ring{box-shadow:0 0 0 2px ${AD},0 0 22px color-mix(in srgb,${AD} 55%,transparent),inset 0 0 12px color-mix(in srgb,${AD} 22%,transparent)}
 .ml-star-cv{z-index:2147483646}`;
   D.head.appendChild(css);
   root.classList.add('ml-star-on');
@@ -1293,14 +1294,18 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
     const filled = bg && (bg.length < 4 || +bg[3] > .3), bordered = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none';
     return filled || bordered ? b : null;
   }
-  let mx = -500, my = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
+  let lastDark = null, mx = -500, my = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
   function probe(){
     const el = D.elementFromPoint(mx, my); if (!el) return;
     let n = el, c = null;
     while (n && n.nodeType === 1){ const m = getComputedStyle(n).backgroundColor.match(/[\d.]+/g);
       if (m && (m.length < 4 || +m[3] > .5)){ c = m; break; } n = n.parentElement; }
     if (c) dark = (.2126*c[0] + .7152*c[1] + .0722*c[2]) / 255 < .45;
-    star.querySelector('svg').style.filter = `drop-shadow(0 0 5px ${AM})` + (dark ? '' : ' drop-shadow(0 0 1px rgba(20,20,22,.7))');
+    if (dark === lastDark) return; lastDark = dark;
+    const pth = star.querySelector('path');
+    pth.setAttribute('fill', dark ? '#fff' : '#2F3438'); pth.setAttribute('stroke', dark ? AM : '#fff'); pth.setAttribute('stroke-width', dark ? '1.2' : '1.4');
+    star.querySelector('svg').style.filter = dark ? `drop-shadow(0 0 5px ${AM})` : `drop-shadow(0 0 1.5px ${AD}) drop-shadow(0 0 7px color-mix(in srgb,${AD} 70%,transparent))`;
+    root.classList.toggle('ml-star-light', !dark);
   }
   function target(el){
     beam = !!(el && el.closest('.fl-box') && !el.closest('.ml-fl-ui'));            // в фонарике курсор = луч
@@ -1364,7 +1369,7 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
         if (k >= 1){ dots.splice(i, 1); continue; }
         d.x += d.vx; d.y += d.vy; d.vx *= .94; d.vy *= .94;
         ctx.beginPath(); ctx.arc(d.x, d.y, d.r*(1 - k*.5), 0, 7);
-        ctx.fillStyle = `rgba(188,208,230,${((1-k)*.9).toFixed(3)})`; ctx.fill(); }
+        ctx.fillStyle = dark ? `rgba(188,208,230,${((1-k)*.9).toFixed(3)})` : `rgba(95,120,150,${((1-k)*.85).toFixed(3)})`; ctx.fill(); }
     }
   }
   requestAnimationFrame(frame);

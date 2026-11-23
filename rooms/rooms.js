@@ -107,13 +107,22 @@ const mlStudio = (() => {
     });
   }
   // порядок и скрытие блоков — только примерка в студии (закреплять в редакторе Тильды)
+  // группы: блок Тильды + наши вставки перед ним (например, фонарик перед скрытой обложкой)
+  function groups(){
+    const box = D.getElementById('allrecords') || D.querySelector('.t-records'); if (!box) return [];
+    const out = []; let pend = [];
+    [...box.children].forEach(el => { if (el.classList.contains('t-rec')){ out.push({id: el.id, rec: el, els: pend.concat(el)}); pend = []; } else if (!/^(SCRIPT|STYLE|LINK)$/.test(el.tagName)) pend.push(el); });
+    if (pend.length && out.length) out[out.length - 1].els.push(...pend);
+    return out;
+  }
   function blocks(c){
-    const b = on && c.blocks && c.blocks[location.pathname]; const box = D.querySelector('.t-records') || D.body;
-    D.querySelectorAll('.t-rec').forEach(r => { r.style.order = ''; r.classList.remove('mls-hide'); });
+    const b = on && c.blocks && c.blocks[location.pathname]; const box = D.getElementById('allrecords') || D.querySelector('.t-records'); if (!box) return;
+    const gs = groups();
+    gs.forEach(g => g.els.forEach(e => { e.style.order = ''; e.classList.remove('mls-hide'); }));
     if (!b) { box.classList.remove('mls-order'); return; }
     box.classList.add('mls-order');
-    (b.order || []).forEach((id, i) => { const r = D.getElementById(id); if (r) r.style.order = i + 1; });
-    (b.hidden || []).forEach(id => { const r = D.getElementById(id); if (r) r.classList.add('mls-hide'); });
+    const ord = (b.order || []).slice(); gs.forEach(g => { if (!ord.includes(g.id)) ord.push(g.id); });
+    gs.forEach(g => { const i = ord.indexOf(g.id); g.els.forEach(e => e.style.order = i + 1); if ((b.hidden || []).includes(g.id)) g.els.forEach(e => e.classList.add('mls-hide')); });
   }
   const st = D.createElement('style'); st.id = 'mls-css';
   function apply(c){
@@ -133,7 +142,7 @@ const mlStudio = (() => {
   if (frame) addEventListener('storage', e => { if (e.key !== 'ml-studio-draft') return; let d = {}; try { d = JSON.parse(e.newValue || '{}'); } catch (x){}
     const prev = window.mlStudioCfg, next = Object.assign({}, head, d);
     if (prev.cursor !== next.cursor || prev.flash !== next.flash) location.reload(); else apply(next); });
-  return {on, frame, head, cfg, apply, FONTS, COLORS, ls};
+  return {on, frame, head, cfg, apply, groups, FONTS, COLORS, ls};
 })();
 window.mlStudioApi = mlStudio;
 

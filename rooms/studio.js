@@ -188,7 +188,9 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
   }
 
   // ---------- блоки страницы: примерка порядка
-  const recName = r => { const t = r.getAttribute('data-record-type'); const own = r.querySelector('[id^="ml-"]');
+  const recName = (r, g) => { const t = r.getAttribute('data-record-type'); const own = r.querySelector('[id^="ml-"]');
+    if (g && g.els.some(e => e.id === 'ml-flash')) return ['Первый экран: фонарик', 'на месте обложки Тильды'];
+    if (own) return [{'ml-rooms': 'Живые комнаты', 'ml-cat': 'Каталог раздела'}[own.id] || 'Свой код (' + own.id + ')', ''];
     const names = {'123': own ? ({'ml-rooms': 'Живые комнаты', 'ml-cat': 'Каталог раздела'}[own.id] || 'Свой код ' + own.id) : 'HTML-код', '183': 'Обложка', '2861': 'Каталог', '738': 'Логотипы брендов', '1331': '3D-модели', '3113': 'Шапка', '706': 'Корзина', '985': 'Поиск'};
     const txt = (r.querySelector('.t-section__title,.t-title,.t-name,h1,h2,.t-text') || {}).textContent || '';
     return [names[t] || 'Блок T' + t, txt.trim().replace(/\s+/g, ' ').slice(0, 48)]; };

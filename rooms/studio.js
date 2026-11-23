@@ -38,10 +38,10 @@
   let reloadNeeded = false;
   // quiet — идёт жест (ползунок, палитра): без перерисовки панели и без записи в историю, сайт обновляется раз в кадр
   let raf = 0;
-  const applySoon = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; S.apply(st); }); };
+  const applySoon = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; S.apply(live()); }); };
   function set(k, v, quiet){ if (!quiet) push(); const old = st[k]; if (v === '' || v === undefined) delete st[k]; else st[k] = v;
     if (old !== v && needReload(k, old, v)) reloadNeeded = true;
-    save(); if (quiet) applySoon(); else { S.apply(st); sync(); if (MOTION_KEYS.includes(k)) replaySoon(); } }
+    save(); if (quiet) applySoon(); else { S.apply(live()); sync(); if (MOTION_KEYS.includes(k)) replaySoon(); } }
   // курсор-конструктор и анимации меняются сразу; перезагрузка нужна только для фонарика и старых курсоров (спот, огонёк)
   const legacy = x => x === 'spot' || x === 'glow';
   function needReload(k, old, v){
@@ -78,6 +78,7 @@
     {id: 'cursor', name: 'Курсор', ic: '➹'},
     {id: 'motion', name: 'Анимации', ic: '➶'},
     {id: 'fx', name: 'Эффекты', ic: '☾'},
+    {id: 'text', name: 'Тексты', ic: '✎'},
     {id: 'blocks', name: 'Блоки', ic: '☰'},
     {id: 'done', name: 'Готово', ic: '✓'},
   ];
@@ -205,10 +206,11 @@
   const TABN = Object.fromEntries(T.map(t => [t.id, t.name]));
   // подпись значения по-человечески
   function valName(f, v){
-    if (v === undefined || v === null || v === '') return 'как есть';
+    if (v === undefined || v === null || v === '') return f.type === 'text' ? 'как было' : 'как есть';
     if (f.o){ const o = f.o.find(x => x[0] === v); if (o) return o[1]; }
     if (f.type === 'tiles'){ const o = SHAPE_N.find(x => x[0] === v); if (o) return o[1]; }
     if (f.type === 'range') return String(v).replace('.', ',') + (f.u ? ' ' + f.u : '');
+    if (f.type === 'text') return '«' + (String(v).length > 44 ? String(v).slice(0, 42) + '…' : v) + '»';
     return String(v);
   }
   // что отличается от того, что сейчас на сайте (HEAD)
@@ -217,6 +219,8 @@
     ALL.forEach(f => { const a = get(f.k), b = f.k.startsWith('colors.') ? headC[f.k.slice(7)] : S.head[f.k];
       const norm = x => x === undefined || x === null || x === '' ? '' : String(x).toUpperCase();
       if (norm(a) !== norm(b)) out.push(f); });
+    Object.keys(st.texts || {}).forEach(k => { if (st.texts[k] !== ((S.head.texts || {})[k])) out.push({tab: 'text', k: 'texts.' + k, t: txtLabel(k), type: 'text'}); });
+    Object.keys(S.head.texts || {}).forEach(k => { if (!(st.texts || {})[k]) out.push({tab: 'text', k: 'texts.' + k, t: txtLabel(k), type: 'text'}); });
     return out;
   }
 
@@ -367,9 +371,9 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
   const $ = s => sh.querySelector(s), P = $('.p'), nav = $('nav'), main = $('main');
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
   const toast = t => { const e = $('.toast'); e.textContent = t; e.classList.add('on'); clearTimeout(e.t); e.t = setTimeout(() => e.classList.remove('on'), 1800); };
-  const get = k => k.startsWith('colors.') ? st.colors[k.slice(7)] : st[k];
+  const get = k => k.startsWith('colors.') ? st.colors[k.slice(7)] : k.startsWith('texts.') ? (st.texts || {})[k.slice(6)] : st[k];
   const put = (k, v, quiet) => { if (!k.startsWith('colors.')) return set(k, v, quiet);
-    if (!quiet) push(); st.colors[k.slice(7)] = v; save(); if (quiet) applySoon(); else { S.apply(st); sync(); } };
+    if (!quiet) push(); st.colors[k.slice(7)] = v; save(); if (quiet) applySoon(); else { S.apply(live()); sync(); } };
   let tab = S.ls.get('ml-studio-tab') || 'look';
 
   nav.innerHTML = T.map(t => `<button data-t="${t.id}"><span>${t.ic}</span>${t.name}</button>`).join('');
@@ -457,7 +461,7 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
     const vi = visIds.indexOf(id), other = act === 'up' ? visIds[vi - 1] : act === 'down' ? visIds[vi + 1] : null;
     if (other){ ord.splice(ord.indexOf(id), 1); const c = ord.indexOf(other); ord.splice(act === 'up' ? c : c + 1, 0, id); }
     if (act === 'eye'){ const h = new Set(b.hidden || []); h.has(id) ? h.delete(id) : h.add(id); b.hidden = [...h]; }
-    b.order = ord; save(); S.apply(st); render();
+    b.order = ord; save(); S.apply(live()); render();
   }
 
   // ---------- итог: код для HEAD
@@ -474,8 +478,8 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   --mlc-font: 'Avenir Next','Avenir','Nunito Sans',Arial,sans-serif; /* шрифт всего сайта */
 }
 </style>
-<!-- Настройки Студии: шрифты, формы, анимации, эффекты. Менять через Студию. -->
-<script>window.mlStudio=${JSON.stringify(rest, null, 1).replace(/\n\s*/g, ' ')};</script>
+<!-- Настройки Студии: шрифты, формы, анимации, эффекты, тексты. Менять через Студию. -->
+<script>window.mlStudio=${JSON.stringify(rest, null, 1).replace(/\n\s*/g, ' ').replace(/</g, '\\u003c')};</script>
 <!-- Оформление сайта (комнаты, каталог, день/ночь, фонарик, курсор). Не трогать. -->
 <script defer src="${BUNDLE}"></script>`;
   }
@@ -512,6 +516,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     <li>Выберите пресет ниже — или идите по вкладкам. Всё видно на сайте сразу и <b>только вам</b>.</li>
     <li><span class="k">🎯</span> нажмите и кликните по любому месту сайта — откроется его настройка.</li>
     <li><span class="k">◑</span> удерживайте — покажу, как сайт выглядит сейчас у всех. Отпустите — снова ваш вариант.</li>
+    <li><span class="k">✎</span> вкладка «Тексты» — надписи комнат, фонарика, каталога можно поправить прямо на сайте.</li>
     <li><span class="k">↶</span> отмена шага, <span class="k">🎲</span> случайный вид, <span class="k">📱</span> как на телефоне. Оранжевая точка на вкладке — там что-то изменено.</li>
     <li>Понравилось — сохраните вариант (внизу) или вкладка <b>«Готово»</b>: код для Тильды.</li></ol>
     <button class="x" data-a="help-off">понятно, скрыть</button></div>`;
@@ -545,12 +550,13 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     else if (tab === 'look') main.innerHTML = lookUI();
     else if (tab === 'color') main.innerHTML = colorUI();
     else if (tab === 'blocks') main.innerHTML = blocksUI();
+    else if (tab === 'text') main.innerHTML = textUI();
     else if (tab === 'done') main.innerHTML = doneUI();
     else main.innerHTML = (reloadNeeded && (tab === 'fx' || tab === 'cursor') ? '<div class="note warn">Нужна перезагрузка, чтобы увидеть курсор/фонарик. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : '') + F[tab].map(field).join('');
     dots();
   }
   // открыть настройку: вкладка + прокрутка + подсветка
-  function goto(k){ const f = ALL.find(x => x.k === k); if (!f) return;
+  function goto(k){ const f = ALL.find(x => x.k === k) || (k.startsWith('texts.') ? {k, tab: 'text'} : null); if (!f) return;
     query = ''; $('.srch input').value = ''; tab = f.tab; S.ls.set('ml-studio-tab', tab);
     if (f.tod && f.tod !== curTod()) setTod(f.tod);
     if (P.classList.contains('min')){ P.classList.remove('min'); S.ls.set('ml-studio-min', null); }
@@ -575,9 +581,14 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const b = e.target.closest('button'); if (!b) return;
     const seg = b.closest('.seg'); if (seg){ set(seg.dataset.k, JSON.parse(b.dataset.v)); return; }
     if (b.dataset.tile){ set('curShape', b.dataset.tile === 'star' ? '' : b.dataset.tile); return; }
-    if (b.dataset.cp != null){ push(); const cp = CUR_PRESETS[+b.dataset.cp]; CUR_KEYS.forEach(k => delete st[k]); Object.assign(st, cp.c); save(); S.apply(st); sync(); toast('Курсор «' + cp.n + '» — подвигайте мышью по сайту'); return; }
+    if (b.dataset.cp != null){ push(); const cp = CUR_PRESETS[+b.dataset.cp]; CUR_KEYS.forEach(k => delete st[k]); Object.assign(st, cp.c); save(); S.apply(live()); sync(); toast('Курсор «' + cp.n + '» — подвигайте мышью по сайту'); return; }
     if (b.dataset.goto){ goto(b.dataset.goto); return; }
-    if (b.dataset.sva != null){ const x = saves()[+b.dataset.sva]; if (!x) return; push(); st = JSON.parse(JSON.stringify(x.st)); st.colors = Object.assign({}, headC, st.colors || {}); save(); S.apply(st); sync(); replay(); toast('Вариант «' + x.n + '»'); return; }
+    if (b.dataset.reset && b.dataset.reset.startsWith('texts.')){ push(); putText(b.dataset.reset.slice(6), ''); sync(); return; }
+    if (b.dataset.treset){ push(); putText(b.dataset.treset, ''); sync(); return; }
+    if (b.dataset.tshow){ const el = [...D.querySelectorAll('[data-mlt="' + b.dataset.tshow + '"]')].find(e => !e.closest('.mls-host') && e.offsetHeight > 0);
+      if (!el) return toast('Этот текст сейчас скрыт или на другой странице'); el.scrollIntoView({behavior: 'smooth', block: 'center'});
+      const o = el.style.outline; el.style.outline = '2px solid #BCD0E6'; el.style.outlineOffset = '4px'; setTimeout(() => { el.style.outline = o; }, 1600); return; }
+    if (b.dataset.sva != null){ const x = saves()[+b.dataset.sva]; if (!x) return; push(); const keepT = st.texts; st = JSON.parse(JSON.stringify(x.st)); st.texts = keepT; st.colors = Object.assign({}, headC, st.colors || {}); save(); S.apply(live()); sync(); replay(); toast('Вариант «' + x.n + '»'); return; }
     if (b.dataset.svd != null){ const a = saves(); a.splice(+b.dataset.svd, 1); savesPut(a); sync(); return; }
     if (b.dataset.ctod){ setTod(b.dataset.ctod); openPk = null; pkHsv = null; sync(); return; }
     if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
@@ -586,28 +597,29 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (b.dataset.cdef){ pkHsv = null; put(b.dataset.cdef, headC[b.dataset.cdef.slice(7)]); return; }
     if (b.dataset.p != null){ push(); const p = PRESETS[+b.dataset.p]; const cur = st.cursor, fl = st.flash;
       // «Базовый» — заводской вид: исходные цвета (не из HEAD), никаких настроек, курсор-звезда и фонарик по умолчанию
-      if (p.base){ if (st.cursor !== undefined || st.flash !== undefined) reloadNeeded = true; st = {blocks: st.blocks, colors: Object.assign({}, DEF_C)}; }
-      else { st = Object.assign({cursor: cur, flash: fl}, JSON.parse(JSON.stringify(p.c)), {blocks: st.blocks}); st.colors = Object.assign({}, headC, p.c.colors || {}); }
-      Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(st); sync(); toast('Пресет «' + p.n + '»'); replay(); return; }
+      if (p.base){ if (st.cursor !== undefined || st.flash !== undefined) reloadNeeded = true; st = {blocks: st.blocks, texts: st.texts, colors: Object.assign({}, DEF_C)}; }
+      else { st = Object.assign({cursor: cur, flash: fl}, JSON.parse(JSON.stringify(p.c)), {blocks: st.blocks, texts: st.texts}); st.colors = Object.assign({}, headC, p.c.colors || {}); }
+      Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(live()); sync(); toast('Пресет «' + p.n + '»'); replay(); return; }
     if (b.dataset.b){ moveBlock(b.closest('.bl').dataset.id, b.dataset.b); return; }
     const a = b.dataset.a;
     if (a === 'save'){ const inp = main.querySelector('.saves input'), n = (inp.value || '').trim() || 'Вариант ' + (saves().length + 1);
-      const arr = saves().filter(x => x.n !== n); arr.unshift({n, d: new Date().toLocaleDateString('ru-RU'), st: Object.assign({}, st, {blocks: undefined})}); savesPut(arr.slice(0, 20)); sync(); toast('Сохранено: ' + n); }
+      const arr = saves().filter(x => x.n !== n); arr.unshift({n, d: new Date().toLocaleDateString('ru-RU'), st: Object.assign({}, st, {blocks: undefined, texts: undefined})}); savesPut(arr.slice(0, 20)); sync(); toast('Сохранено: ' + n); }
     if (a === 'pick') pickMode(!picking);
+    if (a === 'edit'){ editMode(!editing); sync(); }
     if (a === 'help'){ S.ls.set('ml-studio-help-off', null); query = ''; sIn.value = ''; tab = 'look'; render(); main.scrollTop = 0; }
     if (a === 'help-off'){ S.ls.set('ml-studio-help-off', '1'); sync(); }
     if (a === 'sclear'){ sIn.value = ''; query = ''; render(); }
     if (a === 'min'){ P.classList.add('min'); S.ls.set('ml-studio-min', '1'); }
     if (a === 'max'){ P.classList.remove('min'); S.ls.set('ml-studio-min', null); }
-    if (a === 'undo'){ const h = hist.pop(); if (!h) return toast('Отменять нечего'); st = JSON.parse(h); save(); S.apply(st); render(); toast('Отменено'); }
+    if (a === 'undo'){ const h = hist.pop(); if (!h) return toast('Отменять нечего'); st = JSON.parse(h); save(); S.apply(live()); render(); toast('Отменено'); }
     if (a === 'dice') dice();
     if (a === 'phone') phone();
     if (a === '_replay') replay();
     if (a === 'reload') location.reload();
-    if (a === 'ctod-reset'){ push(); TOD_COLORS[curTod()].f.forEach(f => { const k = f.k.slice(7); st.colors[k] = headC[k]; }); openPk = null; pkHsv = null; save(); S.apply(st); sync(); toast('Цвета вернулись'); }
-    if (a === 'blocks-reset'){ push(); if (st.blocks) delete st.blocks[location.pathname]; save(); S.apply(st); render(); }
+    if (a === 'ctod-reset'){ push(); TOD_COLORS[curTod()].f.forEach(f => { const k = f.k.slice(7); st.colors[k] = headC[k]; }); openPk = null; pkHsv = null; save(); S.apply(live()); sync(); toast('Цвета вернулись'); }
+    if (a === 'blocks-reset'){ push(); if (st.blocks) delete st.blocks[location.pathname]; save(); S.apply(live()); render(); }
     if (a === 'copy'){ const txt = exportCode(); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Скопировано — вставьте в HEAD Тильды'), () => { const t = main.querySelector('textarea'); t.select(); D.execCommand('copy'); toast('Скопировано'); }); }
-    if (a === 'reset-all'){ push(); st = Object.assign({}, S.head); st.colors = Object.assign({}, headC); save(); S.apply(st); render(); toast('Как на сайте'); }
+    if (a === 'reset-all'){ push(); st = Object.assign({}, S.head); st.colors = Object.assign({}, headC); save(); S.apply(live()); render(); toast('Как на сайте'); }
     if (a === 'exit'){ S.ls.set('ml-studio-on', null); const u = new URL(location.href); u.searchParams.delete('studio'); location.href = u.toString(); }
   });
   function replay(){ if (S.replay) S.replay(); }
@@ -616,7 +628,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const hue = Math.floor(Math.random() * 360), sat = 30 + Math.random() * 50;
     const hsl = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
       return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('').toUpperCase(); };
-    st = Object.assign({}, {cursor: st.cursor, flash: st.flash, blocks: st.blocks}, {
+    st = Object.assign({}, {cursor: st.cursor, flash: st.flash, blocks: st.blocks, texts: st.texts}, {
       colors: Object.assign({}, headC, Math.random() < .7 ? {moon: hsl(hue, sat, 78), moonDay: hsl(hue, sat * .8, 55), moonDeep: hsl(hue, sat * .7, 40)} : {}),
       font: pick(['', ...S.FONTS.slice(0, 11)]), headFont: pick(['', ...S.FONTS]), headCase: pick(['upper', 'none']), headWeight: pick([300, 400, 600, 700]), headSize: pick(['m', 'l', 'xl']),
       headSpacing: rnd(-.01, .22, .01), radiusCard: rnd(0, 32, 2), radiusBtn: rnd(0, 40, 2), btnStyle: pick(['', 'outline', 'glass', 'moon']), shadow: rnd(0, 1.6, .1),
@@ -627,10 +639,79 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       curShape: pick(SHAPE_N.map(x => x[0])), curTrail: pick(['', 'sparks', 'comet', 'light', 'none']), curBtn: pick(['', 'fill', 'magnet']), curClick: pick(['', 'ripple', 'stars']), curLag: pick([0, 0, .2, .4]), curSpin: pick(['', 'still', 'spin'])});
     if (st.curShape === 'star') delete st.curShape;
     Object.keys(st).forEach(k => (st[k] === undefined || st[k] === '') && delete st[k]);
-    save(); S.apply(st); render(); replay(); toast('🎲 Новый вид');
+    save(); S.apply(live()); render(); replay(); toast('🎲 Новый вид');
   }
   function phone(){ const ph = $('.phone'), on = ph.classList.toggle('on');
     if (on){ const u = new URL(location.href); u.searchParams.delete('studio'); u.searchParams.set('studio-frame', '1'); ph.querySelector('iframe').src = u.toString(); } }
+  // ---------- ТЕКСТЫ наших блоков (метки data-mlt на сайте)
+  const TXT = {
+    'hero.eye': ['Надпись над заголовком', 'первый экран, со звёздочкой'],
+    'fl.eye': ['Фонарик — надпись сверху', 'маленькими буквами над заголовком'],
+    'fl.title1': ['Фонарик — заголовок, начало', 'обычным цветом'],
+    'fl.title2': ['Фонарик — заголовок, окончание', 'цветом акцента, с новой строки'],
+    'fl.text': ['Фонарик — описание', ''],
+    'cat.title': ['Каталог — заголовок панели', 'на телефоне'],
+    'cat.help1': ['«Не нашли нужное?» — заголовок', 'в каталоге слева и в плитке разделов'],
+    'cat.help2': ['«Не нашли нужное?» — текст', 'в каталоге слева'],
+    'cat.wa': ['«Не нашли нужное?» — подпись плитки', 'в плитках «Все разделы»'],
+    'rooms.title': ['Живые комнаты — заголовок', ''],
+    'rooms.text': ['Живые комнаты — описание', 'под заголовком'],
+    'rooms.cta': ['Живые комнаты — кнопка', 'ведёт в WhatsApp'],
+    'models.title': ['3D-модели — заголовок', ''],
+    'logo.slogan': ['Подпись под логотипом', 'в шапке и в подвале'],
+    'tod.text': ['Меню «время суток» — пояснение', 'открывается кнопкой времени в шапке'],
+  };
+  const txtLabel = k => (TXT[k] || [k])[0];
+  // исходный текст (как в коде) — запомнен самим сайтом
+  const origText = k => { const el = [...D.querySelectorAll('[data-mlt="' + k + '"]')].find(e => e.dataset.mltO != null); return el ? el.dataset.mltO : null; };
+  const pageKeys = () => { const ks = []; D.querySelectorAll('[data-mlt]').forEach(e => { if (!e.closest('.mls-host') && !ks.includes(e.dataset.mlt)) ks.push(e.dataset.mlt); }); return ks; };
+  let editing = false;
+  const live = () => editing && st.headAnim ? Object.assign({}, st, {headAnim: ''}) : st;
+  const edCss = D.createElement('style'); edCss.textContent = `html.mls-editing [data-mlt]{outline:1.5px dashed color-mix(in srgb,var(--ml-amber,#BCD0E6) 85%,transparent)!important;outline-offset:3px;border-radius:3px;cursor:text!important;min-width:1em}
+html.mls-editing [data-mlt]:hover{background:color-mix(in srgb,var(--ml-amber,#BCD0E6) 14%,transparent)!important}
+html.mls-editing [data-mlt]:focus{outline-style:solid!important;outline-width:2px!important}`;
+  D.head.appendChild(edCss);
+  function editMode(on){
+    editing = on; root.classList.toggle('mls-editing', on);
+    D.querySelectorAll('[data-mlt]').forEach(el => { if (el.closest('.mls-host')) return; if (on) el.contentEditable = 'plaintext-only'; else el.removeAttribute('contenteditable'); });
+    S.apply(live(), true); if (!on) replay();
+    toast(on ? 'Кликните по тексту с пунктиром и печатайте' : 'Правка на сайте выключена');
+  }
+  // новые блоки (каталог, окна) появились, пока включена правка
+  new MutationObserver(() => { if (editing) D.querySelectorAll('[data-mlt]:not([contenteditable])').forEach(el => { if (!el.closest('.mls-host')) el.contentEditable = 'plaintext-only'; }); }).observe(D.body, {childList: true, subtree: true});
+  function putText(key, v, from){
+    st.texts = st.texts || {}; const o = origText(key);
+    if (v === o || v === '') delete st.texts[key]; else st.texts[key] = v;
+    if (!Object.keys(st.texts).length) delete st.texts;
+    save();
+    D.querySelectorAll('[data-mlt="' + key + '"]').forEach(el => { if (el !== from && !el.closest('.mls-host') && el.textContent !== (v || o)) el.textContent = v || o; });
+    window.mlStudioCfg = live();
+  }
+  let typed = null;
+  D.addEventListener('input', e => { const el = e.target; if (!editing || !el.dataset || el.dataset.mlt == null) return;
+    if (typed !== el){ push(); typed = el; }
+    putText(el.dataset.mlt, el.textContent, el);
+    const ta = main.querySelector(`textarea[data-t="${el.dataset.mlt}"]`); if (ta) ta.value = el.textContent; }, true);
+  D.addEventListener('focusout', e => { if (editing && e.target.dataset && e.target.dataset.mlt != null){ typed = null; sync(); } }, true);
+  D.addEventListener('keydown', e => { if (editing && e.key === 'Enter' && e.target.dataset && e.target.dataset.mlt != null){ e.preventDefault(); e.target.blur(); } }, true);
+  // в режиме правки ссылки с текстом не открываются
+  D.addEventListener('click', e => { if (editing && e.target.closest && e.target.closest('[data-mlt]') && !e.target.closest('.mls-host')) e.preventDefault(); }, true);
+  function textUI(){
+    const ks = pageKeys(); Object.keys(st.texts || {}).forEach(k => { if (!ks.includes(k)) ks.push(k); });
+    return `<div class="note">Здесь — тексты блоков, которые <b>не правятся в редакторе Тильды</b> (комнаты, фонарик, каталог, подписи). Остальные тексты сайта меняйте в Тильде как обычно.</div>
+      <button class="big${editing ? '' : ' sec'}" data-a="edit">${editing ? '✓ Правка на сайте включена — нажмите, чтобы выключить' : '✎ Править прямо на сайте'}</button>
+      <small style="display:block;color:#8E97A1;font-size:11.5px;margin:6px 0 4px">${editing ? 'Тексты с пунктиром можно кликнуть и печатать. Enter — готово.' : 'Или меняйте в полях ниже — на сайте видно сразу.'}</small>
+      ${ks.map(k => { const o = origText(k), v = (st.texts || {})[k], cur = v != null ? v : (o || ''), [n, h] = TXT[k] || [k, ''];
+        return `<div class="f" data-f="texts.${k}"><label>${esc(n)}${v != null && o != null ? `<button class="x" data-treset="${k}">вернуть как было</button>` : ''}</label>${h || o == null ? `<small>${esc(h || '')}${o == null ? (h ? ' · ' : '') + 'на другой странице' : ''}</small>` : ''}
+        <textarea data-t="${k}" rows="${Math.min(5, Math.ceil(cur.length / 42) || 1)}" style="height:auto;font:13px/1.4 inherit;color:#EEF1F4;background:#1C1F23">${esc(cur)}</textarea>
+        <span style="display:flex;gap:10px;margin-top:4px"><button class="x" data-tshow="${k}" style="margin:0">⌖ показать на сайте</button></span></div>`; }).join('') || '<div class="note">На этой странице наших текстов нет.</div>'}`;
+  }
+  main.addEventListener('input', e => { const ta = e.target; if (ta.tagName !== 'TEXTAREA' || !ta.dataset.t) return;
+    if (typed !== ta){ push(); typed = ta; } putText(ta.dataset.t, ta.value.replace(/\n+/g, ' '));
+    // ссылка «вернуть как было» — без перерисовки панели (иначе пропадёт фокус)
+    const lab = ta.closest('.f').querySelector('label'), has = (st.texts || {})[ta.dataset.t] != null, rb = lab.querySelector('[data-treset]');
+    if (has && !rb) lab.insertAdjacentHTML('beforeend', `<button class="x" data-treset="${ta.dataset.t}">вернуть как было</button>`); if (!has && rb) rb.remove(); });
+  main.addEventListener('focusout', e => { if (e.target.tagName === 'TEXTAREA' && e.target.dataset.t) typed = null; });
   // ---------- поиск настроек
   const sIn = $('.srch input');
   sIn.addEventListener('input', () => { query = sIn.value.trim(); render(); main.scrollTop = 0; });
@@ -638,7 +719,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   // ---------- ◑ сравнить: пока держат — сайт как сейчас у всех
   const cmpB = $('[data-a="cmp"]');
   const cmpOn = e => { e.preventDefault(); cmpB.classList.add('on'); S.apply(Object.assign({}, S.head, {colors: Object.assign({}, headC)})); toast('Так сайт выглядит сейчас у всех'); };
-  const cmpOff = () => { if (!cmpB.classList.contains('on')) return; cmpB.classList.remove('on'); S.apply(st); };
+  const cmpOff = () => { if (!cmpB.classList.contains('on')) return; cmpB.classList.remove('on'); S.apply(live()); };
   cmpB.addEventListener('pointerdown', cmpOn); cmpB.addEventListener('pointerup', cmpOff); cmpB.addEventListener('pointerleave', cmpOff); cmpB.addEventListener('pointercancel', cmpOff);
   // ---------- 🎯 «Что это?»: клик по сайту открывает нужную настройку
   const HEADSEL = '.t-section__title,.t-title,.ml-hd h2,.mk-hd b,.t183__title,.ml-cat h1,.ml-cat h2,h1,h2,h3';
@@ -661,13 +742,14 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   const hlT = D.createElement('div'); hlT.style.cssText = 'position:absolute;left:-2px;top:-26px;background:#BCD0E6;color:#1C1F23;font:700 12px/1 Nunito Sans,Arial,sans-serif;padding:5px 8px;border-radius:6px;white-space:nowrap';
   hl.appendChild(hlT); D.body.appendChild(hl);
   function whatIs(el){ if (!el || !el.closest || el.closest('.mls-host')) return null;
+    const tx = el.closest('[data-mlt]'); if (tx) return {el: tx, k: 'texts.' + tx.dataset.mlt, n: 'Текст «' + txtLabel(tx.dataset.mlt) + '»'};
     for (const [sel, k, n] of WHAT){ const m = el.closest(sel); if (m) return {el: m, k, n}; }
     const rec = el.closest('.t-rec'); return rec ? {el: rec, k: null, n: 'Фон блока'} : null; }
   function pickMode(on){ picking = on; pickB.classList.toggle('on', on); hl.style.display = 'none'; root.style.cursor = '';
     if (on) toast('Кликните по любому месту сайта'); }
   D.addEventListener('pointermove', e => { if (!picking) return; const w = whatIs(e.target); if (!w){ hl.style.display = 'none'; return; }
     const r = w.el.getBoundingClientRect(); Object.assign(hl.style, {display: 'block', left: r.left - 3 + 'px', top: r.top - 3 + 'px', width: r.width + 6 + 'px', height: r.height + 6 + 'px'});
-    hlT.textContent = w.n + ' → ' + (w.k ? TABN[(ALL.find(x => x.k === w.k) || {}).tab] : 'Цвета'); hlT.style.top = r.top < 30 ? 'auto' : '-26px'; hlT.style.bottom = r.top < 30 ? '-26px' : 'auto'; }, true);
+    hlT.textContent = w.n + ' → ' + (w.k ? (w.k.startsWith('texts.') ? 'Тексты' : TABN[(ALL.find(x => x.k === w.k) || {}).tab]) : 'Цвета'); hlT.style.top = r.top < 30 ? 'auto' : '-26px'; hlT.style.bottom = r.top < 30 ? '-26px' : 'auto'; }, true);
   D.addEventListener('click', e => { if (!picking) return; const w = whatIs(e.target); if (!w) return;
     e.preventDefault(); e.stopPropagation(); pickMode(false);
     if (w.k) goto(w.k); else { query = ''; sIn.value = ''; tab = 'color'; render(); toast('Цвет фона — выберите время суток и «Фон»'); } }, true);
@@ -681,6 +763,6 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   let lastTod = root.dataset.tod;
   new MutationObserver(() => { todSync(); if (root.dataset.tod === lastTod) return; lastTod = root.dataset.tod; if (tab === 'color' && !gesture){ openPk = null; pkHsv = null; sync(); } }).observe(root, {attributes: true, attributeFilter: ['data-tod']}); todSync();
   if (S.ls.get('ml-studio-min') === '1') P.classList.add('min');
-  D.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA/.test((e.composedPath()[0] || {}).tagName || '')){ const h = hist.pop(); if (h){ e.preventDefault(); st = JSON.parse(h); save(); S.apply(st); render(); toast('Отменено'); } } });
+  D.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA/.test((e.composedPath()[0] || {}).tagName || '') && !(e.composedPath()[0] || {}).isContentEditable){ const h = hist.pop(); if (h){ e.preventDefault(); st = JSON.parse(h); save(); S.apply(live()); render(); toast('Отменено'); } } });
   render();
 })();

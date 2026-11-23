@@ -238,6 +238,20 @@ const mlStudio = (() => {
       if (u.origin !== location.origin || (u.pathname === location.pathname && u.search === location.search) || /tproduct|#!/.test(u.href)) return;
       e.preventDefault(); root.classList.add('mls-out'); setTimeout(() => { location.href = u.href; }, 260); });
   }
+  // ---------- тексты наших блоков (метки data-mlt): мастер меняет в Студии, попадают в HEAD как mlStudio.texts
+  let tmo = null;
+  function texts(){
+    const T = (window.mlStudioCfg || {}).texts || {};
+    if (!on && !Object.keys(T).length) return;   // у обычного посетителя без своих текстов — ничего не делаем
+    D.querySelectorAll('[data-mlt]').forEach(el => {
+      if (el.closest('.mls-host')) return;
+      if (el.dataset.mltO == null) el.dataset.mltO = el.textContent;
+      if (el === D.activeElement) return;   // её сейчас печатают — не трогаем
+      const want = T[el.dataset.mlt] != null && T[el.dataset.mlt] !== '' ? T[el.dataset.mlt] : el.dataset.mltO;
+      if (el.textContent !== want) el.textContent = want;
+    });
+    if (!tmo){ tmo = new MutationObserver(() => { clearTimeout(tmo.t); tmo.t = setTimeout(texts, 40); }); tmo.observe(D.body || root, {childList: true, subtree: true}); }
+  }
   // порядок и скрытие блоков — только примерка в студии (закреплять в редакторе Тильды)
   // группы: блок Тильды + наши вставки перед ним (например, фонарик перед скрытой обложкой)
   function groups(){
@@ -269,7 +283,7 @@ const mlStudio = (() => {
     if (t !== lastCss){ st.textContent = lastCss = t; }
     if (!st.isConnected) D.head.appendChild(st);
     const p = force ? null : prev; prev = JSON.parse(JSON.stringify(c));
-    const ready = () => { if (ch(AK, p, c)) anim(c); if (ch(['spacing'], p, c)) spacing(c.spacing); if (ch(['blocks'], p, c)) blocks(c);
+    const ready = () => { texts(); if (ch(AK, p, c)) anim(c); if (ch(['spacing'], p, c)) spacing(c.spacing); if (ch(['blocks'], p, c)) blocks(c);
       if (ch(['headAnim'], p, c)) heads(c); if (ch(['imgReveal'], p, c)) imgs(c); if (ch(['progress', 'topBtn', 'hdrHide'], p, c)) scrollFx(c);
       if (ch(['sky'], p, c)) sky(c); if (ch(['pageFade'], p, c)) pageFade(c);
       D.dispatchEvent(new Event('mls-apply')); };
@@ -296,7 +310,7 @@ const mlStudio = (() => {
   // проиграть появление заново (кнопка в Студии)
   function replay(){ const c = window.mlStudioCfg || cfg; anyReplay = true; anim({}); heads({}); imgs({});
     setTimeout(() => { anim(c); heads(c); imgs(c); anyReplay = false; }, 80); }
-  return {get on(){ return on; }, frame, head, cfg, apply, groups, replay, FONTS, COLORS, ls};
+  return {get on(){ return on; }, frame, head, cfg, apply, groups, replay, texts, FONTS, COLORS, ls};
 })();
 window.mlStudioApi = mlStudio;
 
@@ -311,7 +325,7 @@ function k2rgb(K){const t=K/100;let r,g,b;
 
 function rooms(){
   const host = document.getElementById('ml-rooms'); if (!host) return;
-  host.innerHTML = "<div class=\"ml-wrap\">\n  <div class=\"ml-hd\"><h2>Включите свет в комнате</h2>\n  <p>Ваши комнаты со светильниками из нашего каталога. Включайте каждый светильник, меняйте яркость и цвет света от тёплого 2700&nbsp;K до&nbsp;холодного 6500&nbsp;K.</p></div>\n  <div class=\"lr\" id=\"lr\" aria-label=\"Живая комната: интерактивный свет\">\n    <div class=\"lr-view\">\n      <div class=\"lr-frame\" id=\"lrFrame\">\n        <canvas id=\"lrCv\" aria-label=\"Комната с выбранным светом\"></canvas>\n        <div class=\"lr-loading\" id=\"lrLoading\">Загружаю комнату…</div>\n        <div class=\"lr-tag\" id=\"lrTag\"><b>Вечер</b> · 2700 K</div>\n      </div>\n      <div class=\"lr-k\">\n        <div class=\"lr-krow\"><div class=\"lr-kval\" id=\"kval\">2700 K<small>тёплый</small></div><div class=\"lr-chips\" id=\"lrK\"></div></div>\n        <input id=\"mlK\" class=\"kt\" type=\"range\" min=\"2700\" max=\"6500\" step=\"50\" value=\"2700\" aria-label=\"Цветовая температура, К\">\n        <div class=\"lr-scale\"><span>2700 K</span><span>4000 K</span><span>6500 K</span></div>\n      </div>\n    </div>\n    <div class=\"lr-panel\">\n      <div class=\"lr-rooms\" id=\"lrRooms\" role=\"tablist\" aria-label=\"Комната\"></div>\n      <div class=\"lr-seg\" role=\"radiogroup\" aria-label=\"Время суток\">\n        <button type=\"button\" id=\"lrNight\" role=\"radio\" class=\"on\" aria-checked=\"true\">Вечер</button>\n        <button type=\"button\" id=\"lrDay\" role=\"radio\" aria-checked=\"false\">День</button>\n      </div>\n      <div class=\"lr-lbl\">Сценарии</div>\n      <div class=\"lr-chips lr-scenes\" id=\"lrScenes\"></div>\n      <div class=\"lr-lbl\">Светильники</div>\n      <div class=\"lr-list\" id=\"lrList\"></div>\n    </div>\n  </div>\n  <p class=\"lr-note\" id=\"lrNote\"></p>\n  <div class=\"ml-cta\"><a class=\"ml-btn\" href=\"https://wa.me/996998899675?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%9F%D0%BE%D0%BC%D0%BE%D0%B3%D0%B8%D1%82%D0%B5%20%D0%BF%D0%BE%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%B5%D1%82%20%D0%B4%D0%BB%D1%8F%20%D0%BA%D0%BE%D0%BC%D0%BD%D0%B0%D1%82%D1%8B\" target=\"_blank\" rel=\"noopener\">Подобрать свет для моей комнаты</a></div>\n</div>";
+  host.innerHTML = "<div class=\"ml-wrap\">\n  <div class=\"ml-hd\"><h2 data-mlt=\"rooms.title\">Включите свет в комнате</h2>\n  <p data-mlt=\"rooms.text\">Ваши комнаты со светильниками из нашего каталога. Включайте каждый светильник, меняйте яркость и цвет света от тёплого 2700&nbsp;K до&nbsp;холодного 6500&nbsp;K.</p></div>\n  <div class=\"lr\" id=\"lr\" aria-label=\"Живая комната: интерактивный свет\">\n    <div class=\"lr-view\">\n      <div class=\"lr-frame\" id=\"lrFrame\">\n        <canvas id=\"lrCv\" aria-label=\"Комната с выбранным светом\"></canvas>\n        <div class=\"lr-loading\" id=\"lrLoading\">Загружаю комнату…</div>\n        <div class=\"lr-tag\" id=\"lrTag\"><b>Вечер</b> · 2700 K</div>\n      </div>\n      <div class=\"lr-k\">\n        <div class=\"lr-krow\"><div class=\"lr-kval\" id=\"kval\">2700 K<small>тёплый</small></div><div class=\"lr-chips\" id=\"lrK\"></div></div>\n        <input id=\"mlK\" class=\"kt\" type=\"range\" min=\"2700\" max=\"6500\" step=\"50\" value=\"2700\" aria-label=\"Цветовая температура, К\">\n        <div class=\"lr-scale\"><span>2700 K</span><span>4000 K</span><span>6500 K</span></div>\n      </div>\n    </div>\n    <div class=\"lr-panel\">\n      <div class=\"lr-rooms\" id=\"lrRooms\" role=\"tablist\" aria-label=\"Комната\"></div>\n      <div class=\"lr-seg\" role=\"radiogroup\" aria-label=\"Время суток\">\n        <button type=\"button\" id=\"lrNight\" role=\"radio\" class=\"on\" aria-checked=\"true\">Вечер</button>\n        <button type=\"button\" id=\"lrDay\" role=\"radio\" aria-checked=\"false\">День</button>\n      </div>\n      <div class=\"lr-lbl\">Сценарии</div>\n      <div class=\"lr-chips lr-scenes\" id=\"lrScenes\"></div>\n      <div class=\"lr-lbl\">Светильники</div>\n      <div class=\"lr-list\" id=\"lrList\"></div>\n    </div>\n  </div>\n  <p class=\"lr-note\" id=\"lrNote\"></p>\n  <div class=\"ml-cta\"><a class=\"ml-btn\" href=\"https://wa.me/996998899675?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%9F%D0%BE%D0%BC%D0%BE%D0%B3%D0%B8%D1%82%D0%B5%20%D0%BF%D0%BE%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%B5%D1%82%20%D0%B4%D0%BB%D1%8F%20%D0%BA%D0%BE%D0%BC%D0%BD%D0%B0%D1%82%D1%8B\" target=\"_blank\" rel=\"noopener\" data-mlt=\"rooms.cta\">Подобрать свет для моей комнаты</a></div>\n</div>";
 // ---------- Живая комната (relighting: отрендеренные проходы складываются в WebGL). Три комнаты.
 (() => {
 const ROOMS = {
@@ -692,7 +706,7 @@ function extras(){
   // ---------- фирменный стиль блоков Тильды (CSS в extras.css); отключить: data-brand="off"
   if (SCRIPT && SCRIPT.dataset.brand === 'off') root.classList.add('ml-nobrand');
   else { const ht = D.querySelector('.t183__title');
-    if (ht && !D.querySelector('.ml-hero-eye')){ const e = D.createElement('div'); e.className = 'ml-hero-eye'; e.textContent = 'здесь есть свет.'; ht.before(e); } }
+    if (ht && !D.querySelector('.ml-hero-eye')){ const e = D.createElement('div'); e.className = 'ml-hero-eye'; e.dataset.mlt = 'hero.eye'; e.textContent = 'здесь есть свет.'; ht.before(e); } }
 
   // ---------- время суток: сайт подстраивается под час посетителя
   const TOD = {
@@ -707,7 +721,7 @@ function extras(){
   const tod = D.createElement('div'); tod.className = 'ml-tod';
   tod.innerHTML = '<button type="button" class="ml-tod-btn" aria-haspopup="menu" aria-expanded="false"></button><div class="ml-tod-menu" role="menu" aria-label="Время суток"></div>';
   const btn = tod.firstChild, menu = tod.lastChild;
-  menu.innerHTML = '<p>Сайт освещён по вашему времени. Можно выбрать вручную.</p>' +
+  menu.innerHTML = '<p data-mlt="tod.text">Сайт освещён по вашему времени. Можно выбрать вручную.</p>' +
     [['auto','Авто','по часам'], ...Object.entries(TOD).map(([k,v]) => [k, v.name, v.hint])]
     .map(([m,n,h]) => `<button type="button" role="menuitemradio" data-m="${m}">${n}<span>${h}</span></button>`).join('');
   let last = null;
@@ -764,9 +778,9 @@ function extras(){
       <img class="fl-on" src="${BASE}fl/on.jpg" alt="Спальня с включённым светом: люстра Ambrella LH55114, лампы EGLO Viserbella, подсветка изголовья и парящий потолок" loading="${ld}" decoding="async">
       <div class="fl-flash" aria-hidden="true"><i class="fl-wave"></i><svg class="fl-rays" viewBox="-50 -50 100 100"><g>${[0,45,90,135,180,225,270,315].map(a => `<line x1="0" y1="${a % 90 ? -9 : -11}" x2="0" y2="${a % 90 ? -30 : -48}" transform="rotate(${a})"/>`).join('')}</g></svg><svg class="fl-star" viewBox="-13 -13 26 26"><path d="M0,-12 C1,-3 3,-1 12,0 C3,1 1,3 0,12 C-1,3 -3,1 -12,0 C-3,-1 -1,-3 0,-12Z"/></svg></div>
       <div class="ml-fl-ui"><span class="ml-fl-hint">${coarse ? 'Ведите пальцем — это луч' : 'Ведите курсором — это луч'}</span><button type="button" class="ml-fl-sw" aria-pressed="false">Включить свет</button></div>
-      <div class="ml-fl-txt"><div class="ml-fl-wrap"><div class="ml-fl-eye">Спальня · 2700 K</div>
-        <h2>Без света комната <b>просто темнота</b></h2>
-        <p>Одна и та же спальня: в темноте и с люстрой Ambrella LH55114, лампами EGLO Viserbella, подсветкой изголовья и парящим потолком. Подберём такой же свет для вашей.</p></div></div>
+      <div class="ml-fl-txt"><div class="ml-fl-wrap"><div class="ml-fl-eye" data-mlt="fl.eye">Спальня · 2700 K</div>
+        <h2><span data-mlt="fl.title1">Без света комната</span> <b data-mlt="fl.title2">просто темнота</b></h2>
+        <p data-mlt="fl.text">Одна и та же спальня: в темноте и с люстрой Ambrella LH55114, лампами EGLO Viserbella, подсветкой изголовья и парящим потолком. Подберём такой же свет для вашей.</p></div></div>
     </div></section>`;
     const sec = flHost.firstChild, fl = sec.querySelector('.fl-box'), on = fl.querySelector('.fl-on'), sw = fl.querySelector('.ml-fl-sw');
     let tx = .5, ty = .45, cx = .5, cy = .45, idle = 0, user = false, vis = false;
@@ -861,7 +875,7 @@ function extras(){
     if (links.length){
       const nice = n => ({eglo:'EGLO', isonex:'Isonex', geniled:'Geniled'})[n.toLowerCase()] || (/^[a-zа-я]+$/.test(n) ? n.charAt(0).toUpperCase() + n.slice(1) : n);
       const box = D.createElement('div'); box.className = 'ml-3d';
-      box.innerHTML = `<div class="ml-3d-hd">3D-модели для дизайнеров</div><div class="ml-3d-grid" style="--n:${links.length}">` +
+      box.innerHTML = `<div class="ml-3d-hd" data-mlt="models.title">3D-модели для дизайнеров</div><div class="ml-3d-grid" style="--n:${links.length}">` +
         links.map(x => `<a class="ml-3d-c" href="${x.href}" target="_blank" rel="noopener"><b>${nice(x.name)}</b><span>3D-модели<i aria-hidden="true">↗</i></span></a>`).join('') + '</div>';
       const row = m3.querySelector('.t1331') || m3.firstElementChild;
       row.style.display = 'none'; m3.appendChild(box);
@@ -872,7 +886,7 @@ function extras(){
   const ft = rec('718') || D.getElementById('t-footer');
   if (ft && !D.querySelector('.ml-bw')){
     const bwBox = D.createElement('div'); bwBox.className = 'ml-bw';
-    bwBox.innerHTML = '<div class="ml-logo" role="img" aria-label="Moonlight"></div><div class="ml-slogan">профессиональное освещение</div>';
+    bwBox.innerHTML = '<div class="ml-logo" role="img" aria-label="Moonlight"></div><div class="ml-slogan" data-mlt="logo.slogan">профессиональное освещение</div>';
     ft.matches('.t-rec') ? ft.after(bwBox) : ft.prepend(bwBox);
     const words = [bwBox.querySelector('.ml-logo')];
     const vis = () => words.find(el => el.offsetWidth > 0) || words[0];
@@ -901,7 +915,7 @@ function extras(){
     const vis = () => imgs().find(i => i.getBoundingClientRect().width > 0);
     const a = imgs()[0] && imgs()[0].closest('a');
     const hl = D.createElement('a'); hl.className = 'ml-hlogo' + (mob ? ' ml-hlogo-m' : ''); hl.href = (a && a.getAttribute('href')) || '/'; hl.setAttribute('aria-label', 'Moonlight — на главную');
-    hl.innerHTML = '<i class="ml-hlogo-w"></i><span class="ml-hlogo-s">профессиональное освещение</span>';
+    hl.innerHTML = '<i class="ml-hlogo-w"></i><span class="ml-hlogo-s" data-mlt="logo.slogan">профессиональное освещение</span>';
     host.appendChild(hl); D.documentElement.classList.add('ml-hlogo-on');
     const place = () => { const im = vis(), p = host.getBoundingClientRect();
       if (!im) { hl.style.display = 'none'; return; }
@@ -1137,10 +1151,10 @@ function extras(){
     const box = D.createElement('div'); box.className = 'ml-cat';
     box.innerHTML = `<button type="button" class="ml-cat-open" aria-expanded="false">${ico(4)}<span>Каталог товаров</span><b aria-hidden="true">☰</b></button>
       <aside class="ml-cat-side" aria-label="Разделы каталога"><div class="ml-cat-panel">
-        <div class="ml-cat-hd"><span>Каталог</span><button type="button" class="ml-cat-x" aria-label="Закрыть">✕</button></div>
+        <div class="ml-cat-hd"><span data-mlt="cat.title">Каталог</span><button type="button" class="ml-cat-x" aria-label="Закрыть">✕</button></div>
         <ul class="ml-cat-list">${items.map((it, i) => `<li><button type="button" class="ml-cat-row" data-i="${i}" aria-expanded="false">${ico(it.icon)}<span>${esc(it.name)}<small>${it.n}</small></span><i aria-hidden="true">›</i></button>
           <div class="ml-cat-acc">${it.body}</div></li>`).join('')}</ul>
-        <a class="ml-cat-help" href="${WA}" target="_blank" rel="noopener"><b>Не нашли нужное?</b>Подберём свет под ваш проект — напишите в WhatsApp</a>
+        <a class="ml-cat-help" href="${WA}" target="_blank" rel="noopener"><b data-mlt="cat.help1">Не нашли нужное?</b><span data-mlt="cat.help2">Подберём свет под ваш проект — напишите в WhatsApp</span></a>
       </div>
       <div class="ml-sh" role="region" aria-live="polite"><div class="ml-sh-in"></div></div></aside>
       <div class="ml-cat-main"><div class="ml-cat-top"><div class="ml-cat-ttl">Товары</div><div class="ml-chips-w"><button type="button" class="ml-chips-ar l" aria-label="Прокрутить фильтры влево"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3L5 8l5 5"/></svg></button><div class="ml-chips" role="tablist" aria-label="Фильтр товаров"></div><button type="button" class="ml-chips-ar r" aria-label="Прокрутить фильтры вправо"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button></div></div></div>
@@ -1179,7 +1193,7 @@ function extras(){
     function extraTiles(){
       const br = items[items.length - 1] || {}, logos = [...String(br.body || '').matchAll(/<img[^>]+src="([^"]+)"/g)].slice(0, 4).map(m => `<i><img src="${m[1]}" alt="" loading="lazy"></i>`).join('');
       return (br.name !== 'Бренды' ? '' : `<button type="button" class="mk-card ml-hc-x ml-hc-br"><div class="mk-img"><div class="ml-hc-logos">${logos}</div></div><h3>Бренды<i aria-hidden="true">→</i></h3><div class="mk-sku">${esc(String(br.n || ''))}</div></button>`)
-        + `<a class="mk-card ml-hc-x ml-hc-wa" href="https://wa.me/996998899675?text=${encodeURIComponent('Здравствуйте! Помогите подобрать свет')}" target="_blank" rel="noopener"><div class="mk-img"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg></div><h3>Не нашли нужное?<i aria-hidden="true">↗</i></h3><div class="mk-sku">Подберём свет в WhatsApp</div></a>`;
+        + `<a class="mk-card ml-hc-x ml-hc-wa" href="https://wa.me/996998899675?text=${encodeURIComponent('Здравствуйте! Помогите подобрать свет')}" target="_blank" rel="noopener"><div class="mk-img"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg></div><h3><span data-mlt="cat.help1">Не нашли нужное?</span><i aria-hidden="true">↗</i></h3><div class="mk-sku" data-mlt="cat.wa">Подберём свет в WhatsApp</div></a>`;
     }
     function draw(again){
       const d = cache[curSlug], list = d.items, part = list.slice(0, shown);

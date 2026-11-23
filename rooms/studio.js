@@ -118,6 +118,7 @@
     ],
   };
   const PRESETS = [
+    {n: 'Базовый', d: 'фирменный вид Moonlight, каким его сделали: лунный акцент, звезда, фонарик', base: true, c: {}},
     {n: 'Как сейчас', d: 'всё как в HEAD', c: {}},
     {n: 'Строгий', d: 'чёткие углы, ровное проявление', c: {radiusCard: 4, radiusBtn: 3, btnStyle: 'outline', anim: 'fade', dur: .6, stagger: 40, hover: 'lift', headCase: 'upper', headSpacing: .18, headWeight: 300, shadow: .3, spacing: .9}},
     {n: 'Мягкий', d: 'круглые формы, пружинка', c: {font: 'Manrope', headFont: 'Manrope', headCase: 'none', headWeight: 600, headSpacing: 0, radiusCard: 28, radiusBtn: 40, anim: 'up', dur: .9, stagger: 90, dist: 36, ease: 'spring', hover: 'lift', shadow: 1.2, gap: 20}},
@@ -388,8 +389,10 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (b.dataset.reset){ set(b.dataset.reset, ''); return; }
     if (b.dataset.cdef){ pkHsv = null; put(b.dataset.cdef, headC[b.dataset.cdef.slice(7)]); return; }
     if (b.dataset.p != null){ push(); const p = PRESETS[+b.dataset.p]; const cur = st.cursor, fl = st.flash;
-      st = Object.assign({cursor: cur, flash: fl}, JSON.parse(JSON.stringify(p.c)), {blocks: st.blocks}); st.colors = Object.assign({}, headC, p.c.colors || {});
-      Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(st); toast('Пресет «' + p.n + '»'); replay(); return; }
+      // «Базовый» — заводской вид: исходные цвета (не из HEAD), никаких настроек, курсор-звезда и фонарик по умолчанию
+      if (p.base){ if (st.cursor !== undefined || st.flash !== undefined) reloadNeeded = true; st = {blocks: st.blocks, colors: Object.assign({}, DEF_C)}; }
+      else { st = Object.assign({cursor: cur, flash: fl}, JSON.parse(JSON.stringify(p.c)), {blocks: st.blocks}); st.colors = Object.assign({}, headC, p.c.colors || {}); }
+      Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(st); sync(); toast('Пресет «' + p.n + '»'); replay(); return; }
     if (b.dataset.b){ moveBlock(b.closest('.bl').dataset.id, b.dataset.b); return; }
     const a = b.dataset.a;
     if (a === 'min'){ P.classList.add('min'); S.ls.set('ml-studio-min', '1'); }

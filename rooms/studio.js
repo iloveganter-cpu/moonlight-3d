@@ -40,8 +40,17 @@
   let raf = 0;
   const applySoon = () => { if (raf) return; raf = requestAnimationFrame(() => { raf = 0; S.apply(st); }); };
   function set(k, v, quiet){ if (!quiet) push(); const old = st[k]; if (v === '' || v === undefined) delete st[k]; else st[k] = v;
-    if ((k === 'cursor' || k === 'flash') && old !== v) reloadNeeded = true;
-    save(); if (quiet) applySoon(); else { S.apply(st); sync(); } }
+    if (old !== v && needReload(k, old, v)) reloadNeeded = true;
+    save(); if (quiet) applySoon(); else { S.apply(st); sync(); if (MOTION_KEYS.includes(k)) replaySoon(); } }
+  // курсор-конструктор и анимации меняются сразу; перезагрузка нужна только для фонарика и старых курсоров (спот, огонёк)
+  const legacy = x => x === 'spot' || x === 'glow';
+  function needReload(k, old, v){
+    if (k === 'flash') return true;
+    if (k !== 'cursor') return false;
+    if (legacy(old) || legacy(v)) return true;
+    return !window.mlCursorShapes && v !== 'off';   // конструктор не запущен (на сайте был выключен) — запустится после перезагрузки
+  }
+  let rpT = 0; const replaySoon = () => { clearTimeout(rpT); rpT = setTimeout(replay, 250); };
   // ---------- цвет: HEX ↔ HSV
   const hex2rgb = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) || 0); };
   const rgb2hex = a => '#' + a.map(x => Math.round(Math.max(0, Math.min(255, x))).toString(16).padStart(2, '0')).join('').toUpperCase();
@@ -66,70 +75,151 @@
     {id: 'color', name: 'Цвета', ic: '◐'},
     {id: 'type', name: 'Шрифты', ic: 'Аа'},
     {id: 'shape', name: 'Формы', ic: '▢'},
+    {id: 'cursor', name: 'Курсор', ic: '➹'},
     {id: 'motion', name: 'Анимации', ic: '➶'},
     {id: 'fx', name: 'Эффекты', ic: '☾'},
     {id: 'blocks', name: 'Блоки', ic: '☰'},
     {id: 'done', name: 'Готово', ic: '✓'},
   ];
   const FONT_OPTS = [['', 'Как сейчас'], ['brand', 'Фирменный (Avenir Next)'], ...S.FONTS.map(f => [f, f])];
+  // формы курсора (те же, что в самом курсоре)
+  const SHAPES = window.mlCursorShapes || {star: 'M0,-12 C1,-3 3,-1 12,0 C3,1 1,3 0,12 C-1,3 -3,1 -12,0 C-3,-1 -1,-3 0,-12Z'};
+  const SHAPE_N = [['star', 'Звезда бренда'], ['star8', 'Звезда 8 лучей'], ['crescent', 'Полумесяц'], ['bulb', 'Лампочка'], ['dot', 'Точка'], ['ring', 'Кольцо'], ['diamond', 'Ромб'], ['plus', 'Крестик']];
+  const CUR_PRESETS = [
+    {n: 'Фирменный', d: 'звезда, точки, кольцо', c: {}},
+    {n: 'Лампочка', d: 'тёплый свет за курсором', c: {curShape: 'bulb', curColor: 'warm', curTrail: 'light', curBtn: 'fill', curClick: 'ripple', curSpin: 'still', curLag: .2}},
+    {n: 'Полумесяц', d: 'комета, магнит', c: {curShape: 'crescent', curTrail: 'comet', curBtn: 'magnet', curSpin: 'still', curHalo: 1.4}},
+    {n: 'Волшебный', d: 'искры и звёзды', c: {curShape: 'star8', curTrail: 'sparks', curClick: 'stars', curHalo: 1.6, curSize: 1.1}},
+    {n: 'Минимал', d: 'точка без следа', c: {curShape: 'dot', curColor: 'mono', curTrail: 'none', curBtn: 'fill', curClick: 'ripple', curHalo: 0, curLag: .3, curLink: 'none'}},
+    {n: 'Кольцо', d: 'мягко догоняет', c: {curShape: 'ring', curSize: 1.3, curLag: .55, curTrail: 'none', curBtn: 'fill', curClick: 'ripple', curSpin: 'still'}},
+  ];
+  const CUR_KEYS = ['curShape', 'curSize', 'curColor', 'curHex', 'curHalo', 'curLag', 'curSpin', 'curLink', 'curTrail', 'curTrailLen', 'curBtn', 'curPull', 'curClick'];
   const F = {
-    color: [
-      {k: 'colors.graphite', t: 'Графит', h: 'основной тёмный: текст днём, тёмные кнопки'},
-      {k: 'colors.light', t: 'Фон днём'},
-      {k: 'colors.night', t: 'Фон ночью'},
-      {k: 'colors.nightDeep', t: 'Тёмные блоки ночью', h: 'подвал, комнаты, каталог'},
-      {k: 'colors.moon', t: 'Акцент на тёмном', h: 'ссылки, рамки, звезда, свечение'},
-      {k: 'colors.moonDay', t: 'Акцент днём'},
-      {k: 'colors.moonDeep', t: 'Тёмный акцент', h: 'мелкий текст и контуры на светлом'},
-    ],
     type: [
-      {k: 'font', t: 'Шрифт текста', type: 'font'},
-      {k: 'headFont', t: 'Шрифт заголовков', type: 'font'},
-      {k: 'headSize', t: 'Размер заголовков', type: 'seg', o: [['', 'Как есть'], ['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']]},
-      {k: 'headWeight', t: 'Толщина заголовков', type: 'seg', o: [['', 'Как есть'], [300, 'Тонкий'], [400, 'Обычный'], [600, 'Плотный'], [700, 'Жирный']]},
-      {k: 'headCase', t: 'Регистр заголовков', type: 'seg', o: [['', 'Как есть'], ['upper', 'ЗАГЛАВНЫЕ'], ['none', 'Обычные']]},
-      {k: 'headSpacing', t: 'Разрядка заголовков', type: 'range', min: -0.02, max: 0.3, step: 0.01, u: 'em'},
-      {k: 'headAlign', t: 'Заголовки', type: 'seg', o: [['', 'Как есть'], ['left', '⇤ Слева'], ['center', '↔ Центр'], ['right', 'Справа ⇥']]},
+      {type: 'h', t: 'Текст'},
+      {k: 'font', t: 'Шрифт текста', type: 'font', h: 'описания, меню, кнопки, карточки'},
       {k: 'textAlign', t: 'Описания блоков', type: 'seg', o: [['', 'Как есть'], ['left', '⇤ Слева'], ['center', '↔ Центр'], ['justify', '☰ По ширине']]},
+      {type: 'h', t: 'Заголовки'},
+      {k: 'headFont', t: 'Шрифт заголовков', type: 'font'},
+      {k: 'headSize', t: 'Размер', type: 'seg', o: [['', 'Как есть'], ['s', 'S'], ['m', 'M'], ['l', 'L'], ['xl', 'XL']]},
+      {k: 'headWeight', t: 'Толщина', type: 'seg', o: [['', 'Как есть'], [300, 'Тонкий'], [400, 'Обычный'], [600, 'Плотный'], [700, 'Жирный']]},
+      {k: 'headCase', t: 'Регистр', type: 'seg', o: [['', 'Как есть'], ['upper', 'ЗАГЛАВНЫЕ'], ['none', 'Обычные']]},
+      {k: 'headSpacing', t: 'Разрядка (расстояние между буквами)', type: 'range', min: -0.02, max: 0.3, step: 0.01, u: 'em'},
+      {k: 'headAlign', t: 'Выравнивание', type: 'seg', o: [['', 'Как есть'], ['left', '⇤ Слева'], ['center', '↔ Центр'], ['right', 'Справа ⇥']]},
     ],
     shape: [
-      {k: 'radiusCard', t: 'Скругление карточек', type: 'range', min: 0, max: 40, step: 1, u: 'px'},
-      {k: 'radiusBtn', t: 'Скругление кнопок', type: 'range', min: 0, max: 40, step: 1, u: 'px'},
-      {k: 'btnStyle', t: 'Кнопки', type: 'seg', o: [['', 'Как есть'], ['outline', 'Контур'], ['glass', 'Стекло'], ['moon', 'Лунные']]},
-      {k: 'shadow', t: 'Тени карточек', type: 'range', min: 0, max: 2, step: 0.1, u: '×'},
+      {type: 'h', t: 'Карточки товаров'},
+      {k: 'radiusCard', t: 'Скругление углов', type: 'range', min: 0, max: 40, step: 1, u: 'px', h: '0 — острые углы'},
+      {k: 'shadow', t: 'Тень', type: 'range', min: 0, max: 2, step: 0.1, u: '×', h: '0 — плоские, больше — «парят» над страницей'},
+      {k: 'cardBorder', t: 'Рамка в цвет акцента', type: 'range', min: 0, max: 3, step: 0.5, u: 'px', def: 0, h: '0 — без рамки'},
       {k: 'gap', t: 'Расстояние между карточками', type: 'range', min: 4, max: 40, step: 1, u: 'px'},
-      {k: 'spacing', t: 'Воздух между блоками', type: 'range', min: 0.4, max: 1.8, step: 0.05, u: '×'},
+      {type: 'h', t: 'Кнопки'},
+      {k: 'radiusBtn', t: 'Скругление углов', type: 'range', min: 0, max: 40, step: 1, u: 'px', h: '40 — «таблетка»'},
+      {k: 'btnStyle', t: 'Вид', type: 'seg', o: [['', 'Как есть'], ['outline', 'Контур'], ['glass', 'Стекло'], ['moon', 'В цвет акцента']]},
+      {k: 'btnCase', t: 'Надписи', type: 'seg', o: [['', 'Как есть'], ['upper', 'ЗАГЛАВНЫЕ'], ['none', 'Обычные']]},
+      {type: 'h', t: 'Страница'},
+      {k: 'spacing', t: 'Воздух между блоками', type: 'range', min: 0.4, max: 1.8, step: 0.05, u: '×', def: 1, h: 'меньше 1 — плотнее, больше — просторнее'},
+    ],
+    cursor: [
+      {type: 'note', t: 'Двигайте мышью <b>по сайту слева</b> — курсор меняется сразу. Над этой панелью — обычная стрелка.'},
+      {k: 'cursor', t: 'Какой курсор', type: 'seg', o: [['', 'Конструктор'], ['off', 'Обычная стрелка'], ['spot', 'Трековый спот'], ['glow', 'Огонёк (старый)']], h: 'всё, что ниже, — для «Конструктора»; спот и огонёк включаются после перезагрузки'},
+      {type: 'cpresets', t: 'Готовые курсоры — нажмите и попробуйте', show: s => !s.cursor},
+      {type: 'h', t: 'Форма', show: s => !s.cursor},
+      {k: 'curShape', t: '', type: 'tiles', show: s => !s.cursor},
+      {k: 'curSize', t: 'Размер', type: 'range', min: 0.6, max: 2.2, step: 0.05, u: '×', def: 1, show: s => !s.cursor},
+      {type: 'h', t: 'Цвет и свечение', show: s => !s.cursor},
+      {k: 'curColor', t: 'Цвет', type: 'seg', o: [['', 'Лунный'], ['warm', 'Тёплый свет'], ['mono', 'Белый / графит'], ['custom', 'Свой цвет']], h: 'лунный и белый сами темнеют на светлом фоне', show: s => !s.cursor},
+      {k: 'curHex', t: 'Свой цвет курсора', type: 'color', def: '#BCD0E6', show: s => !s.cursor && s.curColor === 'custom'},
+      {k: 'curHalo', t: 'Сияние вокруг', type: 'range', min: 0, max: 2.5, step: 0.1, u: '×', def: 1, show: s => !s.cursor},
+      {type: 'h', t: 'Движение', show: s => !s.cursor},
+      {k: 'curLag', t: 'Плавность', type: 'range', min: 0, max: 0.9, step: 0.05, u: '', def: 0, h: '0 — точно за мышью; больше — догоняет мягко, с инерцией', show: s => !s.cursor},
+      {k: 'curSpin', t: 'Вращение', type: 'seg', o: [['', 'От скорости'], ['still', 'Спокойно'], ['spin', 'Всё время']], show: s => !s.cursor},
+      {k: 'curLink', t: 'Над ссылкой', type: 'seg', o: [['', 'Растёт и поворачивается'], ['none', 'Не меняется']], show: s => !s.cursor},
+      {type: 'h', t: 'След', show: s => !s.cursor},
+      {k: 'curTrail', t: 'Что остаётся за курсором', type: 'seg', o: [['', 'Точки'], ['sparks', 'Искры'], ['comet', 'Комета'], ['light', 'Пятно света'], ['none', 'Ничего']], show: s => !s.cursor},
+      {k: 'curTrailLen', t: 'Длина следа', type: 'range', min: 0.3, max: 2.5, step: 0.1, u: '×', def: 1, show: s => !s.cursor && s.curTrail !== 'none'},
+      {type: 'h', t: 'Над кнопкой', show: s => !s.cursor},
+      {k: 'curBtn', t: 'Что происходит', type: 'seg', o: [['', 'Кольцо обнимает'], ['fill', 'Светлый круг'], ['magnet', 'Магнит'], ['none', 'Ничего']], show: s => !s.cursor},
+      {k: 'curPull', t: 'Кнопка тянется к курсору', type: 'range', min: 0, max: 2, step: 0.1, u: '×', def: 1, h: '0 — стоит на месте', show: s => !s.cursor},
+      {type: 'h', t: 'Клик', show: s => !s.cursor},
+      {k: 'curClick', t: 'При нажатии', type: 'seg', o: [['', 'Вспышка точек'], ['ripple', 'Волна'], ['stars', 'Звёзды'], ['none', 'Ничего']], show: s => !s.cursor},
     ],
     motion: [
-      {k: 'anim', t: 'Как появляются блоки', type: 'seg', o: [['', 'Как есть'], ['fade', 'Проявление'], ['up', 'Снизу'], ['down', 'Сверху'], ['left', 'Слева'], ['right', 'Справа'], ['zoom', 'Приближение'], ['blur', 'Из тумана'], ['flip', 'Разворот']]},
-      {k: 'dur', t: 'Длительность', type: 'range', min: 0.2, max: 2.5, step: 0.05, u: 'с'},
-      {k: 'stagger', t: 'Каскад карточек', type: 'range', min: 0, max: 300, step: 10, u: 'мс', h: 'задержка между соседними карточками'},
-      {k: 'dist', t: 'Дальность сдвига', type: 'range', min: 0, max: 160, step: 2, u: 'px'},
+      {type: 'h', t: 'Появление блоков при прокрутке'},
+      {k: 'anim', t: 'Как появляются', type: 'seg', o: [['', 'Как есть'], ['fade', 'Проявление'], ['up', 'Снизу'], ['down', 'Сверху'], ['left', 'Слева'], ['right', 'Справа'], ['zoom', 'Приближение'], ['blur', 'Из тумана'], ['flip', 'Разворот']]},
+      {k: 'dur', t: 'Длительность', type: 'range', min: 0.2, max: 2.5, step: 0.05, u: 'с', def: .8, show: s => s.anim && s.anim !== 'none'},
+      {k: 'stagger', t: 'Карточки по очереди', type: 'range', min: 0, max: 300, step: 10, u: 'мс', def: 80, h: 'пауза между соседними карточками; 0 — все сразу', show: s => s.anim && s.anim !== 'none'},
+      {k: 'dist', t: 'Дальность сдвига', type: 'range', min: 0, max: 160, step: 2, u: 'px', def: 40, show: s => /up|down|left|right/.test(s.anim || '')},
       {k: 'ease', t: 'Характер движения', type: 'seg', o: [['', 'Мягкий'], ['spring', 'Пружина'], ['sharp', 'Резкий'], ['slow', 'Плавный']]},
-      {k: 'hover', t: 'Наведение на карточку', type: 'seg', o: [['', 'Как есть'], ['lift', 'Подъём'], ['glow', 'Свечение'], ['zoom', 'Зум фото'], ['tilt', 'Наклон'], ['none', 'Без эффекта']]},
+      {type: 'h', t: 'Заголовки'},
+      {k: 'headAnim', t: 'Как появляются заголовки', type: 'seg', o: [['', 'Сразу'], ['words', 'По словам'], ['letters', 'По буквам'], ['mask', 'Выезжают из-под края'], ['line', 'Рисуется линия'], ['light', 'Пробегает луч']]},
+      {type: 'h', t: 'Фотографии'},
+      {k: 'imgReveal', t: 'Как появляются фото', type: 'seg', o: [['', 'Сразу'], ['curtain', 'Шторка снизу'], ['side', 'Шторка сбоку'], ['zoom', 'Приближение'], ['fade', 'Из тумана']]},
+      {type: 'h', t: 'Наведение мышью'},
+      {k: 'hover', t: 'На карточку', type: 'seg', o: [['', 'Как есть'], ['lift', 'Подъём'], ['glow', 'Свечение'], ['zoom', 'Зум фото'], ['tilt', 'Наклон'], ['none', 'Без эффекта']]},
+      {k: 'btnHover', t: 'На кнопку', type: 'seg', o: [['', 'Как есть'], ['shine', 'Блик'], ['fill', 'Заливка'], ['lift', 'Подъём'], ['pulse', 'Пульс']]},
+      {k: 'linkHover', t: 'На ссылку и пункт меню', type: 'seg', o: [['', 'Как есть'], ['underline', 'Подчёркивание'], ['glow', 'Свечение']]},
+      {type: 'h', t: 'Переход на другую страницу'},
+      {k: 'pageFade', t: 'Смена страниц', type: 'seg', o: [['', 'Сразу'], [true, 'Плавное затемнение']]},
       {k: '_replay', t: '', type: 'btn', label: '▶ Проиграть появление ещё раз'},
     ],
     fx: [
-      {k: 'cursor', t: 'Курсор', type: 'seg', o: [['', 'Звезда'], ['spot', 'Точка'], ['glow', 'Огонёк'], ['off', 'Обычный']], h: 'применится после перезагрузки'},
+      {type: 'h', t: 'Прокрутка'},
+      {k: 'progress', t: 'Полоса «сколько прочитано» сверху', type: 'seg', o: [['', 'Нет'], ['thin', 'Тонкая'], ['thick', 'Толще']]},
+      {k: 'topBtn', t: 'Кнопка «Наверх»', type: 'seg', o: [['', 'Нет'], [true, 'Есть']], h: 'появляется справа внизу, когда пролистали больше экрана'},
+      {k: 'hdrHide', t: 'Шапка сайта', type: 'seg', o: [['', 'Всегда видна'], [true, 'Прячется при прокрутке вниз']], h: 'возвращается, как только листают вверх'},
+      {type: 'h', t: 'Атмосфера'},
+      {k: 'sky', t: 'Звёзды на тёмных блоках', type: 'range', min: 0, max: 1, step: 0.05, u: '', def: 0, h: 'тихо мерцают в цвет акцента; 0 — выкл'},
+      {k: 'grain', t: 'Плёночное зерно', type: 'range', min: 0, max: 1, step: 0.05, u: '', def: 0, h: 'лёгкий шум поверх всего, как на фото'},
+      {k: 'glow', t: 'Сияние логотипа', type: 'range', min: 0, max: 2.5, step: 0.1, u: '×', def: 1},
+      {k: 'selection', t: 'Выделение текста и полоса прокрутки', type: 'seg', o: [['', 'Обычные'], [true, 'В цвет акцента']]},
+      {type: 'h', t: 'Фирменные штуки'},
       {k: 'flash', t: 'Фонарик на первом экране', type: 'seg', o: [['', 'Вкл'], [false, 'Выкл (обложка)']], h: 'применится после перезагрузки'},
       {k: 'marquee', t: 'Бегущая строка брендов', type: 'range', min: 10, max: 120, step: 2, u: 'с', h: 'время одного круга: меньше — быстрее'},
-      {k: 'glow', t: 'Сияние логотипа', type: 'range', min: 0, max: 2.5, step: 0.1, u: '×'},
-      {k: 'grain', t: 'Плёночное зерно', type: 'range', min: 0, max: 1, step: 0.05, u: ''},
     ],
   };
+  const MOTION_KEYS = ['anim', 'dur', 'stagger', 'dist', 'ease', 'headAnim', 'imgReveal'];
   const PRESETS = [
-    {n: 'Базовый', d: 'фирменный вид Moonlight, каким его сделали: лунный акцент, звезда, фонарик', base: true, c: {}},
-    {n: 'Как сейчас', d: 'всё как в HEAD', c: {}},
-    {n: 'Строгий', d: 'чёткие углы, ровное проявление', c: {radiusCard: 4, radiusBtn: 3, btnStyle: 'outline', anim: 'fade', dur: .6, stagger: 40, hover: 'lift', headCase: 'upper', headSpacing: .18, headWeight: 300, shadow: .3, spacing: .9}},
-    {n: 'Мягкий', d: 'круглые формы, пружинка', c: {font: 'Manrope', headFont: 'Manrope', headCase: 'none', headWeight: 600, headSpacing: 0, radiusCard: 28, radiusBtn: 40, anim: 'up', dur: .9, stagger: 90, dist: 36, ease: 'spring', hover: 'lift', shadow: 1.2, gap: 20}},
-    {n: 'Театр', d: 'крупные заголовки с засечками, медленный выход', c: {headFont: 'Cormorant Garamond', headWeight: 500, headCase: 'none', headSize: 'xl', headSpacing: .02, headAlign: 'center', anim: 'zoom', dur: 1.4, stagger: 140, ease: 'slow', hover: 'glow', grain: .35, glow: 1.6, spacing: 1.25}},
-    {n: 'Галерея', d: 'много воздуха, фото приближаются', c: {font: 'Jost', headFont: 'Playfair Display', headCase: 'none', headWeight: 400, headSize: 'l', anim: 'blur', dur: 1.1, stagger: 110, hover: 'zoom', radiusCard: 0, radiusBtn: 0, shadow: 0, gap: 28, spacing: 1.4}},
-    {n: 'Лунная ночь', d: 'холодное сияние, стеклянные кнопки', c: {colors: {moon: '#9FC3FF', night: '#1B2130', nightDeep: '#141925'}, btnStyle: 'glass', hover: 'glow', glow: 2, anim: 'flip', dur: 1, stagger: 70, grain: .2}},
-    {n: 'Тёплый вечер', d: 'медный акцент, мягкий шрифт', c: {colors: {moon: '#E9B98A', moonDay: '#B07A4A', moonDeep: '#8A5A33', night: '#2B2622', nightDeep: '#211C19'}, font: 'Comfortaa', headFont: 'Comfortaa', headCase: 'none', headWeight: 600, radiusCard: 22, radiusBtn: 30, anim: 'up', ease: 'soft', hover: 'tilt'}},
+    {n: 'Базовый', d: 'фирменный вид Moonlight: лунный акцент, звезда, фонарик', base: true, c: {}},
+    {n: 'Как сейчас', d: 'всё как на сайте сейчас', c: {}},
+    {n: 'Строгий', d: 'чёткие углы, линии под заголовками, крестик', c: {radiusCard: 4, radiusBtn: 3, btnStyle: 'outline', btnCase: 'upper', anim: 'fade', dur: .6, stagger: 40, hover: 'lift', headCase: 'upper', headSpacing: .18, headWeight: 300, shadow: .3, spacing: .9,
+      headAnim: 'line', imgReveal: 'side', btnHover: 'fill', linkHover: 'underline', progress: 'thin', curShape: 'plus', curTrail: 'none', curSpin: 'still', curClick: 'ripple'}},
+    {n: 'Мягкий', d: 'круглые формы, пружинка, точка-курсор', c: {font: 'Manrope', headFont: 'Manrope', headCase: 'none', headWeight: 600, headSpacing: 0, radiusCard: 28, radiusBtn: 40, anim: 'up', dur: .9, stagger: 90, dist: 36, ease: 'spring', hover: 'lift', shadow: 1.2, gap: 20,
+      headAnim: 'words', imgReveal: 'zoom', btnHover: 'lift', topBtn: true, curShape: 'dot', curLag: .35, curTrail: 'light', curBtn: 'fill', curClick: 'ripple'}},
+    {n: 'Театр', d: 'крупные заголовки с засечками, звёзды, медленный выход', c: {headFont: 'Cormorant Garamond', headWeight: 500, headCase: 'none', headSize: 'xl', headSpacing: .02, headAlign: 'center', anim: 'zoom', dur: 1.4, stagger: 140, ease: 'slow', hover: 'glow', grain: .35, glow: 1.6, spacing: 1.25,
+      headAnim: 'mask', imgReveal: 'curtain', sky: .6, pageFade: true, curShape: 'star8', curTrail: 'sparks', curClick: 'stars'}},
+    {n: 'Галерея', d: 'много воздуха, фото из тумана, кольцо-курсор', c: {font: 'Jost', headFont: 'Playfair Display', headCase: 'none', headWeight: 400, headSize: 'l', anim: 'blur', dur: 1.1, stagger: 110, hover: 'zoom', radiusCard: 0, radiusBtn: 0, shadow: 0, gap: 28, spacing: 1.4,
+      headAnim: 'letters', imgReveal: 'fade', linkHover: 'underline', pageFade: true, hdrHide: true, curShape: 'ring', curSize: 1.3, curLag: .55, curTrail: 'none', curBtn: 'fill', curClick: 'ripple', curSpin: 'still'}},
+    {n: 'Лунная ночь', d: 'холодное сияние, полумесяц, звёздное небо', c: {colors: {moon: '#9FC3FF', night: '#1B2130', nightDeep: '#141925'}, btnStyle: 'glass', hover: 'glow', glow: 2, anim: 'flip', dur: 1, stagger: 70, grain: .2,
+      headAnim: 'light', btnHover: 'shine', sky: .8, selection: true, curShape: 'crescent', curTrail: 'comet', curBtn: 'magnet', curHalo: 1.5}},
+    {n: 'Тёплый вечер', d: 'медный акцент, лампочка с тёплым светом', c: {colors: {moon: '#E9B98A', moonDay: '#B07A4A', moonDeep: '#8A5A33', night: '#2B2622', nightDeep: '#211C19'}, font: 'Comfortaa', headFont: 'Comfortaa', headCase: 'none', headWeight: 600, radiusCard: 22, radiusBtn: 30, anim: 'up', ease: 'soft', hover: 'tilt',
+      headAnim: 'words', btnHover: 'pulse', curShape: 'bulb', curColor: 'warm', curTrail: 'light', curBtn: 'fill', curSpin: 'still'}},
+    {n: 'Тихий', d: 'спокойно, без лишних эффектов', c: {anim: 'fade', dur: .5, stagger: 30, hover: 'lift', shadow: .5, curShape: 'dot', curColor: 'mono', curTrail: 'none', curBtn: 'none', curClick: 'none', curPull: 0, curHalo: 0, curLink: 'none', glow: .4}},
+    {n: 'Праздник', d: 'искры, звёзды, всё блестит', c: {anim: 'zoom', ease: 'spring', dur: .9, stagger: 90, headAnim: 'letters', imgReveal: 'zoom', btnHover: 'shine', hover: 'glow', sky: 1, glow: 2.2, curShape: 'star8', curTrail: 'sparks', curClick: 'stars', curHalo: 2, curSize: 1.15}},
   ];
+  // все поля одним списком (поиск, «что изменено», подписи значений)
+  const ALL = [...Object.entries(F).flatMap(([tb, fs]) => fs.filter(f => f.k && f.type !== 'btn').map(f => Object.assign({tab: tb}, f))),
+    ...TOD_ORDER.flatMap(m => TOD_COLORS[m].f.map(f => Object.assign({tab: 'color', type: 'color', grp: TOD_COLORS[m].name, tod: m}, f)))];
+  const TABN = Object.fromEntries(T.map(t => [t.id, t.name]));
+  // подпись значения по-человечески
+  function valName(f, v){
+    if (v === undefined || v === null || v === '') return 'как есть';
+    if (f.o){ const o = f.o.find(x => x[0] === v); if (o) return o[1]; }
+    if (f.type === 'tiles'){ const o = SHAPE_N.find(x => x[0] === v); if (o) return o[1]; }
+    if (f.type === 'range') return String(v).replace('.', ',') + (f.u ? ' ' + f.u : '');
+    return String(v);
+  }
+  // что отличается от того, что сейчас на сайте (HEAD)
+  function changes(){
+    const out = [];
+    ALL.forEach(f => { const a = get(f.k), b = f.k.startsWith('colors.') ? headC[f.k.slice(7)] : S.head[f.k];
+      const norm = x => x === undefined || x === null || x === '' ? '' : String(x).toUpperCase();
+      if (norm(a) !== norm(b)) out.push(f); });
+    return out;
+  }
 
   // ---------- оболочка панели (Shadow DOM — стили сайта её не трогают)
-  const host = D.createElement('div'); host.className = 'mls-host'; host.style.cssText = 'position:fixed;z-index:2147483600;right:16px;top:16px;bottom:16px;width:min(380px,calc(100vw - 32px));pointer-events:none';
+  const host = D.createElement('div'); host.className = 'mls-host'; host.style.cssText = 'position:fixed;z-index:2147483600;right:16px;top:16px;bottom:16px;width:min(400px,calc(100vw - 32px));pointer-events:none';
   const sh = host.attachShadow({mode: 'open'});
   sh.innerHTML = `<style>
 :host{all:initial;cursor:auto}
@@ -140,15 +230,58 @@ input[type=text]{cursor:text}
 .p.min{transform:translateX(calc(100% + 24px));opacity:0;pointer-events:none}
 .fab{pointer-events:auto;position:absolute;right:0;bottom:0;width:54px;height:54px;border-radius:50%;border:1px solid rgba(188,208,230,.4);background:#1C1F23;color:#BCD0E6;font-size:22px;display:none;align-items:center;justify-content:center;box-shadow:0 10px 30px rgba(0,0,0,.4)}
 .min~.fab{display:flex}
-header{display:flex;align-items:center;gap:8px;padding:14px 14px 10px}
+header{display:flex;align-items:center;gap:5px;padding:14px 14px 10px}
 header b{font-size:15px;letter-spacing:.14em;text-transform:uppercase;font-weight:600;flex:1}
 header b i{font-style:normal;color:#BCD0E6}
 .ib{width:30px;height:30px;border-radius:9px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#DDE3EA;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0}
 .ib:hover{border-color:#BCD0E6;color:#fff}
-nav{display:flex;gap:4px;padding:0 10px 10px;overflow-x:auto;scrollbar-width:none}
-nav button{flex:0 0 auto;border:0;background:transparent;color:#AAB2BC;padding:7px 10px;border-radius:10px;font:600 12px/1 inherit;display:flex;gap:6px;align-items:center}
-nav button span{font-size:13px;color:#BCD0E6}
+.srch{margin:0 14px 8px;position:relative}
+.srch input{width:100%;background:rgba(0,0,0,.28);color:#EEF1F4;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 30px 8px 32px;font:13px/1.2 inherit;outline:none}
+.srch input:focus{border-color:#BCD0E6}
+.srch:before{content:"⌕";position:absolute;left:11px;top:50%;transform:translateY(-52%);color:#8E97A1;font-size:16px}
+.srch button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;color:#8E97A1;font-size:14px;padding:4px}
+nav{display:grid;grid-template-columns:repeat(5,1fr);gap:3px;padding:0 10px 10px}
+nav button{position:relative;border:0;background:transparent;color:#AAB2BC;padding:7px 2px 6px;border-radius:10px;font:600 11px/1.1 inherit;display:flex;flex-direction:column;gap:3px;align-items:center}
+nav button span{font-size:14px;color:#BCD0E6;line-height:1}
 nav button.on{background:rgba(188,208,230,.16);color:#fff}
+nav button:hover:not(.on){background:rgba(255,255,255,.05)}
+nav button.ch:after{content:"";position:absolute;top:5px;right:calc(50% - 15px);width:6px;height:6px;border-radius:50%;background:#FFB46B;box-shadow:0 0 6px #FFB46B}
+.hh{margin:16px 0 0;padding-top:4px;color:#BCD0E6;font:700 11px/1.2 inherit;letter-spacing:.12em;text-transform:uppercase}
+.hh+.f{padding-top:6px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.tiles button{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 2px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#C9D0D8;font:600 10.5px/1.15 inherit;text-align:center}
+.tiles button svg{width:26px;height:26px;overflow:visible}
+.tiles button svg path{fill:#fff;stroke:#BCD0E6;stroke-width:1.2;filter:drop-shadow(0 0 4px #BCD0E6)}
+.tiles button.ring svg path{fill:none;stroke:#fff;stroke-width:2.2}
+.tiles button.on{border-color:#BCD0E6;background:rgba(188,208,230,.16);color:#fff;box-shadow:0 0 0 1px #BCD0E6}
+.tiles button:hover:not(.on){border-color:rgba(188,208,230,.5)}
+.cpr{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cpr button{text-align:left;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#EEF1F4;border-radius:11px;padding:8px 9px;font:600 12px/1.2 inherit}
+.cpr button small{display:block;font-weight:400;color:#8E97A1;font-size:10.5px;margin-top:2px}
+.cpr button:hover{border-color:#BCD0E6}
+.flashf{animation:flashf 1.6s ease}
+@keyframes flashf{0%,40%{background:rgba(188,208,230,.22);box-shadow:0 0 0 2px #BCD0E6}100%{background:transparent;box-shadow:none}}
+.f{border-radius:10px}
+.sgrp{margin:12px 0 2px;color:#8E97A1;font-size:11px;letter-spacing:.06em}
+.chg{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);margin-bottom:5px}
+.chg .n{flex:1;min-width:0}
+.chg .n small{display:block;color:#8E97A1;font-size:11px}
+.chg .n b{color:#BCD0E6;font-weight:600}
+.chg i{width:14px;height:14px;border-radius:4px;background:var(--c);display:inline-block;vertical-align:-2px;border:1px solid rgba(255,255,255,.3);margin-right:4px}
+.chg button{border:0;background:none;color:#8E97A1;font:600 11px inherit;padding:2px 4px}
+.chg button:hover{color:#fff}
+.saves{display:flex;gap:6px;margin-top:8px}
+.saves input{flex:1;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px 9px;font:13px inherit}
+.saves button{border:0;border-radius:9px;padding:0 12px;background:#BCD0E6;color:#1C1F23;font:700 12px inherit}
+.sv-l{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:10px;border:1px solid rgba(255,255,255,.08);margin-top:5px}
+.sv-l .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sv-l .n small{color:#7D8690;font-size:11px;margin-left:6px}
+.sv-l button{border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#DDE3EA;border-radius:8px;padding:5px 8px;font:600 11px inherit}
+.sv-l button:hover{border-color:#BCD0E6;color:#fff}
+.ib.on{background:#BCD0E6;color:#1C1F23;border-color:#BCD0E6}
+.help ol{margin:6px 0 0;padding-left:18px}
+.help li{margin:3px 0}
+.help .k{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:6px;border:1px solid rgba(255,255,255,.2);font-size:11px;margin-right:4px;color:#fff}
 main{flex:1;overflow:auto;padding:4px 14px 14px;scrollbar-width:thin;scrollbar-color:rgba(188,208,230,.3) transparent}
 .f{padding:11px 0;border-bottom:1px solid rgba(255,255,255,.06)}
 .f>label,.f>.l{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-weight:600;margin-bottom:7px;color:#E6EAEE}
@@ -206,17 +339,21 @@ footer .tod button{flex:1;border:1px solid rgba(255,255,255,.1);background:none;
 footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:rgba(188,208,230,.5)}
 .toast{position:absolute;left:50%;bottom:74px;transform:translateX(-50%) translateY(10px);background:#BCD0E6;color:#1C1F23;padding:8px 14px;border-radius:20px;font-weight:700;opacity:0;transition:.25s;pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translateX(-50%)}
-.phone{pointer-events:auto;position:fixed;right:calc(min(380px,100vw - 32px) + 32px);top:50%;transform:translateY(-50%);width:390px;height:min(820px,calc(100vh - 40px));border-radius:36px;border:10px solid #0E1012;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden;background:#000;display:none}
+.phone{pointer-events:auto;position:fixed;right:calc(min(400px,100vw - 32px) + 32px);top:50%;transform:translateY(-50%);width:390px;height:min(820px,calc(100vh - 40px));border-radius:36px;border:10px solid #0E1012;box-shadow:0 30px 80px rgba(0,0,0,.55);overflow:hidden;background:#000;display:none}
 .phone.on{display:block}
 .phone iframe{width:100%;height:100%;border:0;display:block}
 @media (max-width:900px){.phone{display:none!important}}
 </style>
 <div class="p">
   <header><b>Студия <i>✦</i></b>
-    <button class="ib" data-a="undo" title="Отменить последнее">↶</button>
+    <button class="ib" data-a="undo" title="Отменить последнее (Ctrl+Z)">↶</button>
+    <button class="ib" data-a="cmp" title="Удерживайте — покажу, как на сайте сейчас">◑</button>
+    <button class="ib" data-a="pick" title="Что это? Нажмите, потом кликните по любому месту сайта — открою его настройки">🎯</button>
     <button class="ib" data-a="dice" title="Случайный вид">🎲</button>
     <button class="ib" data-a="phone" title="Показать на телефоне">📱</button>
+    <button class="ib" data-a="help" title="Как пользоваться">?</button>
     <button class="ib" data-a="min" title="Свернуть">—</button></header>
+  <div class="srch"><input type="text" placeholder="Найти настройку: курсор, кнопки, звёзды…" spellcheck="false"><button data-a="sclear" title="Очистить" hidden>✕</button></div>
   <nav></nav>
   <main></main>
   <footer><div class="tod"></div><button class="ib" data-a="exit" title="Выйти из студии" style="width:auto;padding:0 10px;font-size:12px">Выйти</button></footer>
@@ -270,16 +407,24 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
     zone.addEventListener('pointermove', move); zone.addEventListener('pointerup', up); zone.addEventListener('pointercancel', up);
   });
   function field(f){
+    if (f.show && !f.show(st)) return '';
+    if (f.type === 'h') return `<div class="hh">${f.t}</div>`;
+    if (f.type === 'note') return `<div class="note">${f.t}</div>`;
+    if (f.type === 'cpresets') return `<div class="f"><div class="l">${f.t}</div><div class="cpr">${CUR_PRESETS.map((p, i) => `<button data-cp="${i}">${p.n}<small>${p.d}</small></button>`).join('')}</div></div>`;
     const v = get(f.k), has = v !== undefined && v !== null && v !== '';
+    if (f.type === 'tiles') return `<div class="f" data-f="${f.k}"><div class="tiles" data-k="${f.k}">${SHAPE_N.map(([val, n]) => `<button data-tile="${val}" class="${(v || 'star') === val ? 'on' : ''}${val === 'ring' ? ' ring' : ''}" title="${n}"><svg viewBox="-13 -13 26 26"><path d="${SHAPES[val] || ''}" stroke-linejoin="round"/></svg>${n}</button>`).join('')}</div></div>`;
+    if (f.type === 'color' && !f.k.startsWith('colors.')){ const c = v || f.def;
+      return `<div class="f" data-f="${f.k}"><label>${f.t}${has ? `<button class="x" data-reset="${f.k}">сбросить</button>` : ''}</label>${f.h ? `<small>${f.h}</small>` : ''}
+        <div class="col"><button class="sw${openPk === f.k ? ' on' : ''}" data-sw="${f.k}" style="--c:${esc(c)}" title="Открыть палитру"></button><input type="text" data-k="${f.k}" value="${esc(c)}" maxlength="7" spellcheck="false"></div>${openPk === f.k ? picker(f.k, c) : ''}</div>`; }
     const reset = has && !f.k.startsWith('colors.') && f.type !== 'btn' ? `<button class="x" data-reset="${f.k}">сбросить</button>` : '';
     if (f.k.startsWith('colors.')){ const c = v || '#000000', dflt = headC[f.k.slice(7)];
-      return `<div class="f"><label>${f.t}${c.toUpperCase() !== dflt ? `<button class="x" data-cdef="${f.k}">как было</button>` : ''}</label>${f.h ? `<small>${f.h}</small>` : ''}
+      return `<div class="f" data-f="${f.k}"><label>${f.t}${c.toUpperCase() !== dflt ? `<button class="x" data-cdef="${f.k}">как было</button>` : ''}</label>${f.h ? `<small>${f.h}</small>` : ''}
         <div class="col"><button class="sw${openPk === f.k ? ' on' : ''}" data-sw="${f.k}" style="--c:${esc(c)}" title="Открыть палитру"></button><input type="text" data-k="${f.k}" value="${esc(c)}" maxlength="7" spellcheck="false"></div>${openPk === f.k ? picker(f.k, c) : ''}</div>`; }
     if (f.type === 'btn') return `<div class="f"><button class="big sec" data-a="${f.k}">${f.label}</button></div>`;
-    if (f.type === 'font') return `<div class="f"><label>${f.t}${reset}</label><select data-k="${f.k}">${FONT_OPTS.map(([val, n]) => `<option value="${esc(val)}"${String(v || '') === val ? ' selected' : ''} style="font-family:'${esc(val)}'">${esc(n)}</option>`).join('')}</select></div>`;
-    if (f.type === 'seg') return `<div class="f"><div class="l">${f.t}${reset}</div>${f.h ? `<small>${f.h}</small>` : ''}<div class="seg" data-k="${f.k}">${f.o.map(([val, n]) => `<button data-v='${JSON.stringify(val)}' class="${(has ? v === val : val === '') ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
-    if (f.type === 'range'){ const mid = has ? v : (f.min + f.max) / 2;
-      return `<div class="f"><label>${f.t}<span><span class="v">${has ? (+v).toString().replace('.', ',') + ' ' + f.u : 'как есть'}</span>${reset}</span></label>${f.h ? `<small>${f.h}</small>` : ''}<input type="range" data-k="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${mid}"></div>`; }
+    if (f.type === 'font') return `<div class="f" data-f="${f.k}"><label>${f.t}${reset}</label><select data-k="${f.k}">${FONT_OPTS.map(([val, n]) => `<option value="${esc(val)}"${String(v || '') === val ? ' selected' : ''} style="font-family:'${esc(val)}'">${esc(n)}</option>`).join('')}</select></div>`;
+    if (f.type === 'seg') return `<div class="f" data-f="${f.k}"><div class="l">${f.t}${reset}</div>${f.h ? `<small>${f.h}</small>` : ''}<div class="seg" data-k="${f.k}">${f.o.map(([val, n]) => `<button data-v='${JSON.stringify(val)}' class="${(has ? v === val : val === '') ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
+    if (f.type === 'range'){ const mid = has ? v : f.def != null ? f.def : (f.min + f.max) / 2;
+      return `<div class="f" data-f="${f.k}"><label>${f.t}<span><span class="v">${has ? (+v).toString().replace('.', ',') + ' ' + f.u : 'как есть'}</span>${reset}</span></label>${f.h ? `<small>${f.h}</small>` : ''}<input type="range" data-k="${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${mid}"></div>`; }
     return '';
   }
 
@@ -332,17 +477,6 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
 <!-- Оформление сайта (комнаты, каталог, день/ночь, фонарик, курсор). Не трогать. -->
 <script defer src="${BUNDLE}"></script>`;
   }
-  function doneUI(){
-    const changed = JSON.stringify(Object.assign({}, st, {blocks: undefined})) !== JSON.stringify(Object.assign({}, S.head, {colors: Object.assign({}, headC, S.head.colors || {}), blocks: undefined}));
-    const bl = st.blocks && st.blocks[location.pathname] && ((st.blocks[location.pathname].order || []).length || (st.blocks[location.pathname].hidden || []).length);
-    return `<div class="note"><b>Как закрепить вид для всех посетителей:</b><br>1. Нажмите «Скопировать для HEAD».<br>2. Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код».<br>3. Выделите всё старое (Ctrl+A), вставьте (Ctrl+V), «Сохранить».<br>4. На странице проекта — «Опубликовать все страницы».</div>
-      ${changed ? '' : '<div class="note">Пока всё как на сайте — менять нечего.</div>'}
-      ${bl ? '<div class="note warn">Порядок блоков в код не попадает — его повторяют в редакторе Тильды (вкладка «Блоки»).</div>' : ''}
-      <button class="big" data-a="copy">Скопировать для HEAD</button>
-      <textarea readonly>${esc(exportCode())}</textarea>
-      <button class="big sec" data-a="reset-all">Сбросить черновик — вернуть как на сайте</button>`;
-  }
-
   const curTod = () => TOD_COLORS[root.dataset.tod] ? root.dataset.tod : 'day';
   function setTod(k){ const mb = D.querySelector('.ml-tod-menu button[data-m="' + k + '"]'); if (mb) mb.click(); else { S.ls.set('ml-tod', k); root.dataset.tod = k; }
     const ifr = $('.phone iframe'); if (ifr && ifr.src) try { ifr.contentDocument.documentElement.dataset.tod = k; } catch (x){} }
@@ -355,34 +489,94 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       ${M.f.map(field).join('')}
       <button class="big sec" data-a="ctod-reset">Вернуть цвета «${M.name}» как были</button>`;
   }
-  function render(){
-    nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
-    if (tab === 'look') main.innerHTML = `<div class="note">Двигайте, нажимайте, пробуйте — сайт меняется сразу, но <b>только у вас</b>. Кнопка ↶ отменяет шаг, 🎲 — случайный вид. Когда понравится — вкладка «Готово».</div>
+  function doneUI(){
+    const ch = changes();
+    const bl = st.blocks && st.blocks[location.pathname] && ((st.blocks[location.pathname].order || []).length || (st.blocks[location.pathname].hidden || []).length);
+    const row = f => { const v = get(f.k), col = f.type === 'color';
+      return `<div class="chg"><div class="n">${col ? `<i style="--c:${esc(v)}"></i>` : ''}${esc(f.t || 'Форма курсора')}<small>${esc(TABN[f.tab])}${f.grp ? ' · ' + esc(f.grp) : ''} → <b>${esc(col ? v : valName(f, v))}</b></small></div>
+        <button data-goto="${f.k}" title="Открыть эту настройку">открыть</button>${f.k.startsWith('colors.') ? `<button data-cdef="${f.k}">вернуть</button>` : `<button data-reset="${f.k}">вернуть</button>`}</div>`; };
+    return `<div class="note"><b>Как закрепить вид для всех посетителей:</b><br>1. Нажмите «Скопировать для HEAD».<br>2. Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код».<br>3. Выделите всё старое (Ctrl+A), вставьте (Ctrl+V), «Сохранить».<br>4. На странице проекта — «Опубликовать все страницы».</div>
+      <div class="tl">Что вы поменяли (${ch.length})</div>
+      ${ch.length ? ch.map(row).join('') : '<div class="note">Пока всё как на сайте — менять нечего.</div>'}
+      ${bl ? '<div class="note warn">Порядок блоков в код не попадает — его повторяют в редакторе Тильды (вкладка «Блоки»).</div>' : ''}
+      <button class="big" data-a="copy">Скопировать для HEAD</button>
+      <textarea readonly>${esc(exportCode())}</textarea>
+      <button class="big sec" data-a="reset-all">Сбросить черновик — вернуть как на сайте</button>`;
+  }
+  // ---------- мои варианты: сохранить и сравнить несколько видов
+  const saves = () => { try { return JSON.parse(S.ls.get('ml-studio-saves') || '[]'); } catch (e){ return []; } };
+  const savesPut = a => S.ls.set('ml-studio-saves', JSON.stringify(a));
+  const HELP = `<div class="note help"><b>Как пользоваться Студией</b><ol>
+    <li>Выберите пресет ниже — или идите по вкладкам. Всё видно на сайте сразу и <b>только вам</b>.</li>
+    <li><span class="k">🎯</span> нажмите и кликните по любому месту сайта — откроется его настройка.</li>
+    <li><span class="k">◑</span> удерживайте — покажу, как сайт выглядит сейчас у всех. Отпустите — снова ваш вариант.</li>
+    <li><span class="k">↶</span> отмена шага, <span class="k">🎲</span> случайный вид, <span class="k">📱</span> как на телефоне. Оранжевая точка на вкладке — там что-то изменено.</li>
+    <li>Понравилось — сохраните вариант (внизу) или вкладка <b>«Готово»</b>: код для Тильды.</li></ol>
+    <button class="x" data-a="help-off">понятно, скрыть</button></div>`;
+  let query = '';
+  function searchUI(){
+    const q = query.toLowerCase(), hit = f => [f.t, f.h, f.grp, ...(f.o || []).map(o => o[1]), ...(f.type === 'tiles' ? SHAPE_N.map(x => x[1]) : []), TABN[f.tab]].some(x => x && String(x).toLowerCase().includes(q));
+    const found = ALL.filter(hit); if (!found.length) return `<div class="note">Ничего не нашлось по «${esc(query)}». Попробуйте другое слово: «цвет», «кнопки», «звёзды», «шапка».</div>`;
+    let last = '', out = '';
+    found.forEach(f => { const g = TABN[f.tab] + (f.grp ? ' · ' + f.grp : ''); if (g !== last){ out += `<div class="sgrp">${esc(g)}</div>`; last = g; }
+      out += f.tod && f.tod !== curTod() ? `<div class="f"><div class="l">${esc(f.t)}</div><button class="big sec" data-ctod="${f.tod}" style="margin-top:0">Показать «${esc(f.grp)}» и настроить</button></div>` : field(Object.assign({}, f, {show: null, t: f.t || 'Форма курсора'})); });
+    return out;
+  }
+  function lookUI(){
+    const sv = saves();
+    return `${S.ls.get('ml-studio-help-off') ? '' : HELP}
       ${reloadNeeded ? '<div class="note warn">Курсор или фонарик поменяются после перезагрузки страницы. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : ''}
-      <div class="pr">${PRESETS.map((p, i) => `<button data-p="${i}">${p.n}<small>${p.d}</small></button>`).join('')}</div>`;
+      <div class="tl">Готовые образы — нажмите, чтобы примерить</div>
+      <div class="pr">${PRESETS.map((p, i) => `<button data-p="${i}">${p.n}<small>${p.d}</small></button>`).join('')}</div>
+      <div class="hh">Мои варианты</div>
+      <small style="display:block;color:#8E97A1;font-size:11.5px;margin-top:4px">Сохраните то, что получилось, и переключайтесь между вариантами, чтобы сравнить.</small>
+      <div class="saves"><input type="text" placeholder="Название, например «Зима»" maxlength="40"><button data-a="save">Сохранить</button></div>
+      ${sv.map((x, i) => `<div class="sv-l"><div class="n">${esc(x.n)}<small>${esc(x.d || '')}</small></div><button data-sva="${i}">Примерить</button><button data-svd="${i}" title="Удалить">✕</button></div>`).join('')}`;
+  }
+  // оранжевая точка на вкладках, где что-то изменено
+  function dots(){ const ch = new Set(changes().map(f => f.tab)); if (st.blocks && st.blocks[location.pathname]) ch.add('blocks');
+    nav.querySelectorAll('button').forEach(b => b.classList.toggle('ch', ch.has(b.dataset.t))); }
+  function render(){
+    nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', !query && b.dataset.t === tab));
+    $('.srch button').hidden = !query;
+    if (query) main.innerHTML = searchUI();
+    else if (tab === 'look') main.innerHTML = lookUI();
     else if (tab === 'color') main.innerHTML = colorUI();
     else if (tab === 'blocks') main.innerHTML = blocksUI();
     else if (tab === 'done') main.innerHTML = doneUI();
-    else main.innerHTML = (reloadNeeded && tab === 'fx' ? '<div class="note warn">Нужна перезагрузка, чтобы увидеть курсор/фонарик. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : '') + F[tab].map(field).join('');
+    else main.innerHTML = (reloadNeeded && (tab === 'fx' || tab === 'cursor') ? '<div class="note warn">Нужна перезагрузка, чтобы увидеть курсор/фонарик. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : '') + F[tab].map(field).join('');
+    dots();
   }
+  // открыть настройку: вкладка + прокрутка + подсветка
+  function goto(k){ const f = ALL.find(x => x.k === k); if (!f) return;
+    query = ''; $('.srch input').value = ''; tab = f.tab; S.ls.set('ml-studio-tab', tab);
+    if (f.tod && f.tod !== curTod()) setTod(f.tod);
+    if (P.classList.contains('min')){ P.classList.remove('min'); S.ls.set('ml-studio-min', null); }
+    render(); const el = main.querySelector(`[data-f="${k}"]`);
+    if (el){ el.scrollIntoView({block: 'center'}); el.classList.remove('flashf'); void el.offsetWidth; el.classList.add('flashf'); } }
   function sync(){ const y = main.scrollTop; render(); main.scrollTop = y; }
 
   // ползунок: пока тянут — меняется только подпись и сайт; отпустили — шаг в историю и перерисовка (появится «сбросить»)
   let gesture = false;
   main.addEventListener('input', e => { const el = e.target, k = el.dataset.k; if (!k) return;
     if (el.type === 'range'){ if (!gesture){ push(); gesture = true; }
-      const f = Object.values(F).flat().find(x => x.k === k), lab = el.closest('.f').querySelector('.v');
+      const f = ALL.find(x => x.k === k), lab = el.closest('.f').querySelector('.v');
       if (lab && f) lab.textContent = (+el.value).toString().replace('.', ',') + ' ' + f.u;
       set(k, +el.value, true); return; }
     if (el.type === 'text'){ let v = el.value.trim(); if (v && v[0] !== '#') v = '#' + v;
       if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)){ v = v.toUpperCase(); if (!gesture){ push(); gesture = true; } if (pkHsv && pkHsv.k === k) pkHsv.hsv = rgb2hsv(hex2rgb(v)); put(k, v, true); pkPaint(k, v); } } });
   main.addEventListener('change', e => { const el = e.target;
     if (el.tagName === 'SELECT'){ set(el.dataset.k, el.value); return; }
-    if (gesture){ gesture = false; if (el.dataset.k && el.dataset.k.startsWith('colors.')) remember(el.dataset.k, get(el.dataset.k)); sync(); } });
+    if (gesture){ gesture = false; const k = el.dataset.k; if (k && (k.startsWith('colors.') || k === 'curHex')) remember(k, get(k)); sync(); if (MOTION_KEYS.includes(k)) replaySoon(); } });
   main.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.type === 'text') e.target.blur(); });
   sh.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const seg = b.closest('.seg'); if (seg){ set(seg.dataset.k, JSON.parse(b.dataset.v)); return; }
+    if (b.dataset.tile){ set('curShape', b.dataset.tile === 'star' ? '' : b.dataset.tile); return; }
+    if (b.dataset.cp != null){ push(); const cp = CUR_PRESETS[+b.dataset.cp]; CUR_KEYS.forEach(k => delete st[k]); Object.assign(st, cp.c); save(); S.apply(st); sync(); toast('Курсор «' + cp.n + '» — подвигайте мышью по сайту'); return; }
+    if (b.dataset.goto){ goto(b.dataset.goto); return; }
+    if (b.dataset.sva != null){ const x = saves()[+b.dataset.sva]; if (!x) return; push(); st = JSON.parse(JSON.stringify(x.st)); st.colors = Object.assign({}, headC, st.colors || {}); save(); S.apply(st); sync(); replay(); toast('Вариант «' + x.n + '»'); return; }
+    if (b.dataset.svd != null){ const a = saves(); a.splice(+b.dataset.svd, 1); savesPut(a); sync(); return; }
     if (b.dataset.ctod){ setTod(b.dataset.ctod); openPk = null; pkHsv = null; sync(); return; }
     if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
     if (b.dataset.tone){ const k = b.closest('.pk').dataset.pk; pkHsv = {k, hsv: rgb2hsv(hex2rgb(b.dataset.tone))}; remember(k, b.dataset.tone); put(k, b.dataset.tone); return; }
@@ -395,6 +589,12 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(st); sync(); toast('Пресет «' + p.n + '»'); replay(); return; }
     if (b.dataset.b){ moveBlock(b.closest('.bl').dataset.id, b.dataset.b); return; }
     const a = b.dataset.a;
+    if (a === 'save'){ const inp = main.querySelector('.saves input'), n = (inp.value || '').trim() || 'Вариант ' + (saves().length + 1);
+      const arr = saves().filter(x => x.n !== n); arr.unshift({n, d: new Date().toLocaleDateString('ru-RU'), st: Object.assign({}, st, {blocks: undefined})}); savesPut(arr.slice(0, 20)); sync(); toast('Сохранено: ' + n); }
+    if (a === 'pick') pickMode(!picking);
+    if (a === 'help'){ S.ls.set('ml-studio-help-off', null); query = ''; sIn.value = ''; tab = 'look'; render(); main.scrollTop = 0; }
+    if (a === 'help-off'){ S.ls.set('ml-studio-help-off', '1'); sync(); }
+    if (a === 'sclear'){ sIn.value = ''; query = ''; render(); }
     if (a === 'min'){ P.classList.add('min'); S.ls.set('ml-studio-min', '1'); }
     if (a === 'max'){ P.classList.remove('min'); S.ls.set('ml-studio-min', null); }
     if (a === 'undo'){ const h = hist.pop(); if (!h) return toast('Отменять нечего'); st = JSON.parse(h); save(); S.apply(st); render(); toast('Отменено'); }
@@ -408,7 +608,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (a === 'reset-all'){ push(); st = Object.assign({}, S.head); st.colors = Object.assign({}, headC); save(); S.apply(st); render(); toast('Как на сайте'); }
     if (a === 'exit'){ S.ls.set('ml-studio-on', null); const u = new URL(location.href); u.searchParams.delete('studio'); location.href = u.toString(); }
   });
-  function replay(){ const c = window.mlStudioCfg; S.apply(Object.assign({}, c, {anim: 'none'})); setTimeout(() => { S.apply(st); }, 60); }
+  function replay(){ if (S.replay) S.replay(); }
   const pick = a => a[Math.floor(Math.random() * a.length)], rnd = (a, b, s) => Math.round((a + Math.random() * (b - a)) / s) * s;
   function dice(){ push();
     const hue = Math.floor(Math.random() * 360), sat = 30 + Math.random() * 50;
@@ -419,12 +619,57 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       font: pick(['', ...S.FONTS.slice(0, 11)]), headFont: pick(['', ...S.FONTS]), headCase: pick(['upper', 'none']), headWeight: pick([300, 400, 600, 700]), headSize: pick(['m', 'l', 'xl']),
       headSpacing: rnd(-.01, .22, .01), radiusCard: rnd(0, 32, 2), radiusBtn: rnd(0, 40, 2), btnStyle: pick(['', 'outline', 'glass', 'moon']), shadow: rnd(0, 1.6, .1),
       anim: pick(['fade', 'up', 'zoom', 'blur', 'flip', 'left']), dur: rnd(.5, 1.5, .05), stagger: rnd(40, 180, 10), ease: pick(['', 'spring', 'slow']), hover: pick(['lift', 'glow', 'zoom', 'tilt']),
-      spacing: rnd(.8, 1.4, .05), grain: Math.random() < .3 ? rnd(.1, .5, .05) : undefined});
+      spacing: rnd(.8, 1.4, .05), grain: Math.random() < .3 ? rnd(.1, .5, .05) : undefined,
+      headAnim: pick(['', 'words', 'letters', 'mask', 'line', 'light']), imgReveal: pick(['', 'curtain', 'side', 'zoom', 'fade']), btnHover: pick(['', 'shine', 'fill', 'lift', 'pulse']), linkHover: pick(['', 'underline', 'glow']),
+      sky: Math.random() < .35 ? rnd(.3, 1, .05) : undefined,
+      curShape: pick(SHAPE_N.map(x => x[0])), curTrail: pick(['', 'sparks', 'comet', 'light', 'none']), curBtn: pick(['', 'fill', 'magnet']), curClick: pick(['', 'ripple', 'stars']), curLag: pick([0, 0, .2, .4]), curSpin: pick(['', 'still', 'spin'])});
+    if (st.curShape === 'star') delete st.curShape;
     Object.keys(st).forEach(k => (st[k] === undefined || st[k] === '') && delete st[k]);
     save(); S.apply(st); render(); replay(); toast('🎲 Новый вид');
   }
   function phone(){ const ph = $('.phone'), on = ph.classList.toggle('on');
     if (on){ const u = new URL(location.href); u.searchParams.delete('studio'); u.searchParams.set('studio-frame', '1'); ph.querySelector('iframe').src = u.toString(); } }
+  // ---------- поиск настроек
+  const sIn = $('.srch input');
+  sIn.addEventListener('input', () => { query = sIn.value.trim(); render(); main.scrollTop = 0; });
+  sIn.addEventListener('keydown', e => { if (e.key === 'Escape'){ sIn.value = ''; query = ''; render(); } });
+  // ---------- ◑ сравнить: пока держат — сайт как сейчас у всех
+  const cmpB = $('[data-a="cmp"]');
+  const cmpOn = e => { e.preventDefault(); cmpB.classList.add('on'); S.apply(Object.assign({}, S.head, {colors: Object.assign({}, headC)})); toast('Так сайт выглядит сейчас у всех'); };
+  const cmpOff = () => { if (!cmpB.classList.contains('on')) return; cmpB.classList.remove('on'); S.apply(st); };
+  cmpB.addEventListener('pointerdown', cmpOn); cmpB.addEventListener('pointerup', cmpOff); cmpB.addEventListener('pointerleave', cmpOff); cmpB.addEventListener('pointercancel', cmpOff);
+  // ---------- 🎯 «Что это?»: клик по сайту открывает нужную настройку
+  const HEADSEL = '.t-section__title,.t-title,.ml-hd h2,.mk-hd b,.t183__title,.ml-cat h1,.ml-cat h2,h1,h2,h3';
+  const WHAT = [
+    ['.ml-hlogo,.ml-bw .ml-logo,.t-menu-base__imglogo', 'glow', 'Логотип'],
+    ['.ml-marq-box', 'marquee', 'Бегущая строка брендов'],
+    ['.ml-fl,#ml-flash', 'flash', 'Фонарик'],
+    ['.mls-top', 'topBtn', 'Кнопка «Наверх»'],
+    ['.mls-prog', 'progress', 'Полоса прокрутки'],
+    ['.t-btn,.t-submit,.ml-btn,.t-store__card__btn,.mk-card button,button', 'radiusBtn', 'Кнопка'],
+    ['.mk-card,.t-card,.t-store__card,.t-catalog__card,.t-item', 'radiusCard', 'Карточка'],
+    [HEADSEL, 'headFont', 'Заголовок'],
+    ['img,.t-bgimg', 'imgReveal', 'Фотография'],
+    ['.t-menu__link-item,.t-menu-base__link-item,.t-text a,.t-descr a', 'linkHover', 'Ссылка'],
+    ['[data-record-type="3113"]', 'hdrHide', 'Шапка'],
+    ['.t-descr,.t-text,p,li', 'font', 'Текст'],
+  ];
+  let picking = false; const pickB = $('[data-a="pick"]');
+  const hl = D.createElement('div'); hl.style.cssText = 'position:fixed;pointer-events:none;z-index:2147483590;border:2px solid #BCD0E6;border-radius:8px;box-shadow:0 0 0 4000px rgba(10,12,15,.25),0 0 18px #BCD0E6;transition:all .12s;display:none';
+  const hlT = D.createElement('div'); hlT.style.cssText = 'position:absolute;left:-2px;top:-26px;background:#BCD0E6;color:#1C1F23;font:700 12px/1 Nunito Sans,Arial,sans-serif;padding:5px 8px;border-radius:6px;white-space:nowrap';
+  hl.appendChild(hlT); D.body.appendChild(hl);
+  function whatIs(el){ if (!el || !el.closest || el.closest('.mls-host')) return null;
+    for (const [sel, k, n] of WHAT){ const m = el.closest(sel); if (m) return {el: m, k, n}; }
+    const rec = el.closest('.t-rec'); return rec ? {el: rec, k: null, n: 'Фон блока'} : null; }
+  function pickMode(on){ picking = on; pickB.classList.toggle('on', on); hl.style.display = 'none'; root.style.cursor = '';
+    if (on) toast('Кликните по любому месту сайта'); }
+  D.addEventListener('pointermove', e => { if (!picking) return; const w = whatIs(e.target); if (!w){ hl.style.display = 'none'; return; }
+    const r = w.el.getBoundingClientRect(); Object.assign(hl.style, {display: 'block', left: r.left - 3 + 'px', top: r.top - 3 + 'px', width: r.width + 6 + 'px', height: r.height + 6 + 'px'});
+    hlT.textContent = w.n + ' → ' + (w.k ? TABN[(ALL.find(x => x.k === w.k) || {}).tab] : 'Цвета'); hlT.style.top = r.top < 30 ? 'auto' : '-26px'; hlT.style.bottom = r.top < 30 ? '-26px' : 'auto'; }, true);
+  D.addEventListener('click', e => { if (!picking) return; const w = whatIs(e.target); if (!w) return;
+    e.preventDefault(); e.stopPropagation(); pickMode(false);
+    if (w.k) goto(w.k); else { query = ''; sIn.value = ''; tab = 'color'; render(); toast('Цвет фона — выберите время суток и «Фон»'); } }, true);
+  D.addEventListener('keydown', e => { if (picking && e.key === 'Escape') pickMode(false); });
   // время суток
   const TODS = [['morning', 'Утро'], ['day', 'День'], ['evening', 'Вечер'], ['night', 'Ночь']];
   const tod = $('.tod'); tod.innerHTML = TODS.map(([k, n]) => `<button data-tod="${k}">${n}</button>`).join('');

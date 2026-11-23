@@ -62,6 +62,43 @@ const mlStudio = (() => {
     if (c.marquee) s += `.ml-marq-t{--mq:${c.marquee}s}`;
     if (c.grain) s += `html::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:2147483000;opacity:${c.grain * .5};mix-blend-mode:overlay;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}`;
     if (c.glow != null) s += `:root{--ml-glow-k:${c.glow}}html .ml-hlogo{filter:drop-shadow(0 0 ${10 * c.glow}px color-mix(in srgb,var(--ml-amber) ${Math.round(60 * c.glow)}%,transparent))!important}`;
+    // рамка карточек и регистр кнопок
+    if (c.cardBorder) s += `html :is(${CARDS}){outline:${c.cardBorder}px solid color-mix(in srgb,var(--ml-amber) 70%,transparent)!important;outline-offset:-${c.cardBorder}px}`;
+    if (c.btnCase) s += `html :is(${BTNS}){text-transform:${c.btnCase === 'upper' ? 'uppercase' : 'none'}!important;letter-spacing:${c.btnCase === 'upper' ? '.08em' : 'normal'}!important}`;
+    // наведение на кнопку
+    const BH = `html :is(.t-btn,.t-submit,.ml-btn,.t-store__card__btn,.mk-card button)`;
+    if (c.btnHover === 'shine') s += `${BH}{position:relative;overflow:hidden}${BH}::after{content:"";position:absolute;top:0;bottom:0;left:-60%;width:40%;background:linear-gradient(100deg,transparent,rgba(255,255,255,.55),transparent);transform:skewX(-20deg);pointer-events:none;transition:none}${BH}:hover::after{left:130%;transition:left .7s ${EASE.soft}}`;
+    if (c.btnHover === 'fill') s += `${BH}{background-image:linear-gradient(var(--ml-amber),var(--ml-amber))!important;background-repeat:no-repeat!important;background-size:0 100%!important;transition:background-size .45s ${EASE.soft},color .3s!important}${BH}:hover{background-size:100% 100%!important;color:var(--mlc-graphite,#2F3438)!important}`;
+    if (c.btnHover === 'lift') s += `${BH}{transition:transform .3s ${EASE.spring},box-shadow .3s!important}${BH}:hover{transform:translateY(-3px);box-shadow:0 12px 26px -10px rgba(0,0,0,.45)!important}`;
+    if (c.btnHover === 'pulse') s += `@keyframes mlsPulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ml-amber) 70%,transparent)}100%{box-shadow:0 0 0 16px transparent}}${BH}:hover{animation:mlsPulse 1.1s ease-out infinite}`;
+    // ссылки в тексте и меню
+    const LK = `html :is(.t-text a,.t-descr a,.t-menu__link-item,.t-menu-base__link-item,.t-menusub__link-item,.ml-bw a)`;
+    if (c.linkHover === 'underline') s += `${LK}{background-image:linear-gradient(currentColor,currentColor)!important;background-repeat:no-repeat!important;background-position:0 100%!important;background-size:0 1px!important;transition:background-size .4s ${EASE.soft}!important;text-decoration:none!important}${LK}:hover{background-size:100% 1px!important}`;
+    if (c.linkHover === 'glow') s += `${LK}{transition:text-shadow .3s,color .3s!important}${LK}:hover{color:var(--ml-amber)!important;text-shadow:0 0 12px color-mix(in srgb,var(--ml-amber) 70%,transparent)}`;
+    // выделение текста и полоса прокрутки в цвет акцента
+    if (c.selection) s += `::selection{background:color-mix(in srgb,var(--ml-amber) 45%,transparent)}html{scrollbar-color:var(--ml-amber) transparent}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-thumb{background:var(--ml-amber);border-radius:6px;border:2px solid transparent;background-clip:padding-box}`;
+    // полоса прочитанного и кнопка «наверх»
+    if (c.progress) s += `.mls-prog{position:fixed;left:0;top:0;height:${c.progress === 'thick' ? 4 : 2}px;width:100%;z-index:2147483500;background:var(--ml-amber);box-shadow:0 0 10px var(--ml-amber);transform-origin:0 50%;transform:scaleX(var(--p,0));pointer-events:none}`;
+    if (c.topBtn) s += `.mls-top{position:fixed;right:20px;bottom:20px;z-index:9980;width:46px;height:46px;border-radius:50%;border:1px solid color-mix(in srgb,var(--ml-amber) 60%,transparent);background:color-mix(in srgb,var(--mlc-night-deep,#1C1F23) 82%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);color:var(--ml-amber);display:flex;align-items:center;justify-content:center;opacity:0;transform:translateY(16px);transition:opacity .35s,transform .35s ${EASE.spring};pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.3)}.mls-top.on{opacity:1;transform:none;pointer-events:auto}.mls-top:hover{box-shadow:0 0 0 1px var(--ml-amber),0 0 24px color-mix(in srgb,var(--ml-amber) 50%,transparent)}.mls-top svg{width:20px;height:20px}@media (max-width:980px){.mls-top{bottom:74px;right:14px}}`;
+    if (c.hdrHide) s += `.mls-hdr{transition:translate .4s ${EASE.soft}!important}.mls-hdr-up .mls-hdr{translate:0 -110%}`;
+    // звёздное небо на тёмных блоках
+    if (c.sky) s += `@keyframes mlsTw{0%,100%{opacity:var(--o1)}50%{opacity:var(--o2)}}.mls-sky{position:relative}.mls-sky::before,.mls-sky::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;background-image:var(--mls-sky1);--o1:${(.35 + .5 * c.sky).toFixed(2)};--o2:.08;animation:mlsTw 4.5s ease-in-out infinite}.mls-sky::after{background-image:var(--mls-sky2);--o1:.08;--o2:${(.35 + .5 * c.sky).toFixed(2)};animation-duration:6.5s}.mls-sky>.mls-up{position:relative;z-index:1}`;
+    // переходы между страницами
+    if (c.pageFade && !RMQ) s += `@keyframes mlsPageIn{from{opacity:0}to{opacity:1}}html.mls-pf body{animation:mlsPageIn .55s ${EASE.soft} both}html.mls-out body{opacity:0!important;transition:opacity .28s ease!important}`;
+    // заголовки
+    const ha = c.headAnim;
+    if (ha && !RMQ){
+      if (ha === 'words' || ha === 'letters') s += `.mls-h .mls-wi{display:inline-block;opacity:0;transform:translateY(.55em);filter:blur(${ha === 'letters' ? 4 : 0}px);transition:opacity .6s ${EASE.soft},transform .7s ${EASE[c.ease] || EASE.soft},filter .6s;transition-delay:calc(var(--i)*${ha === 'letters' ? 22 : 70}ms)}.mls-h.mls-hin .mls-wi{opacity:1;transform:none;filter:none}`;
+      if (ha === 'mask') s += `.mls-h .mls-w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.08em;margin-bottom:-.08em}.mls-h .mls-wi{display:inline-block;transform:translateY(110%);transition:transform .9s ${EASE.slow};transition-delay:calc(var(--i)*60ms)}.mls-h.mls-hin .mls-wi{transform:none}`;
+      if (ha === 'line') s += `.mls-h::after{content:"";display:block;height:2px;width:0;margin-top:.45em;background:var(--ml-amber);box-shadow:0 0 10px var(--ml-amber);transition:width 1.1s ${EASE.slow} .15s}.mls-h[data-al=center]::after{margin-left:auto;margin-right:auto}.mls-h[data-al=right]::after{margin-left:auto}.mls-h.mls-hin::after{width:min(120px,40%)}`;
+      if (ha === 'light') s += `.mls-h{background:linear-gradient(90deg,currentColor 0 40%,var(--ml-amber) 50%,currentColor 60% 100%) 100% 0/250% 100% no-repeat;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}.mls-h.mls-hin{background-position:0 0;transition:background-position 1.6s ${EASE.slow} .1s}`;
+    }
+    // фото
+    const ir = c.imgReveal;
+    if (ir && !RMQ){
+      const from = {curtain: 'clip-path:inset(0 0 100% 0)', zoom: 'opacity:0;transform:scale(.9)', fade: 'opacity:0;filter:blur(12px)', side: 'clip-path:inset(0 100% 0 0)'}[ir];
+      if (from) s += `.mls-img{${from}}.mls-img.mls-iin{clip-path:inset(0);opacity:1;transform:none;filter:none;transition:clip-path 1.1s ${EASE.slow},opacity .9s,transform 1.1s ${EASE.slow},filter .9s}`;
+    }
     // появление блоков
     const a = c.anim;
     if (a && a !== 'none' && !RMQ){
@@ -107,6 +144,99 @@ const mlStudio = (() => {
       r.style.paddingTop = k != null && pt ? Math.round(pt * k) + 'px' : r.dataset.mlsPt; r.style.paddingBottom = k != null && pb ? Math.round(pb * k) + 'px' : r.dataset.mlsPb;
     });
   }
+  // ---------- заголовки: делим на слова/буквы (исходный HTML запоминаем, чтобы вернуть)
+  const NOSPLIT = '.mls-host,.t-popup,.t706,.ml-pp-on,.t-catalog__product-popup,[data-record-type="3113"]';
+  const orig = new Map(); let hio = null, hmo = null;
+  function split(h, letters){
+    let i = 0; const tw = D.createTreeWalker(h, NodeFilter.SHOW_TEXT), list = []; let n; while ((n = tw.nextNode())) list.push(n);
+    list.forEach(tn => { if (!tn.nodeValue.trim()) return; const frag = D.createDocumentFragment();
+      tn.nodeValue.split(/(\s+)/).forEach(w => { if (!w) return; if (/^\s+$/.test(w)){ frag.appendChild(D.createTextNode(w)); return; }
+        const o = D.createElement('span'); o.className = 'mls-w'; if (letters) o.style.whiteSpace = 'nowrap';
+        (letters ? [...w] : [w]).forEach(ch => { const s = D.createElement('span'); s.className = 'mls-wi'; s.textContent = ch; s.style.setProperty('--i', Math.min(i++, 60)); o.appendChild(s); });
+        frag.appendChild(o); });
+      tn.parentNode.replaceChild(frag, tn); });
+  }
+  function heads(c){
+    orig.forEach((html, h) => { if (h.isConnected) h.innerHTML = html; h.classList.remove('mls-h', 'mls-hin'); }); orig.clear();
+    D.querySelectorAll('.mls-h').forEach(h => h.classList.remove('mls-h', 'mls-hin'));
+    if (hio){ hio.disconnect(); hio = null; } if (hmo){ hmo.disconnect(); hmo = null; }
+    const ha = c.headAnim; if (!ha || RMQ) return;
+    hio = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; hio.unobserve(e.target); const h = e.target; requestAnimationFrame(() => requestAnimationFrame(() => h.classList.add('mls-hin'))); }), {rootMargin: '0px 0px -10% 0px'});
+    const scan = () => D.querySelectorAll(HEADS).forEach(h => {
+      if (h.classList.contains('mls-h') || h.closest(NOSPLIT) || !h.textContent.trim() || h.offsetHeight < 8) return;
+      if (ha !== 'line' && ha !== 'light'){ orig.set(h, h.innerHTML); split(h, ha === 'letters'); }
+      h.dataset.al = getComputedStyle(h).textAlign.replace('start', 'left');
+      h.classList.add('mls-h'); hio.observe(h); });
+    scan(); hmo = new MutationObserver(() => { clearTimeout(hmo.t); hmo.t = setTimeout(scan, 200); }); hmo.observe(D.body, {childList: true, subtree: true});
+  }
+  // ---------- фото: проявляются при прокрутке
+  const IMGSKIP = '.mls-host,.t-popup,.t706,[data-record-type="3113"],[data-record-type="738"],.ml-marq-box,.ml-hlogo,.ml-fl,#ml-flash,.lr-stage,#ml-rooms,.ml-pp-on,.t-catalog__product-popup';
+  let iio = null, imo = null;
+  function imgs(c){
+    D.querySelectorAll('.mls-img').forEach(e => e.classList.remove('mls-img', 'mls-iin'));
+    if (iio){ iio.disconnect(); iio = null; } if (imo){ imo.disconnect(); imo = null; }
+    if (!c.imgReveal || RMQ) return;
+    iio = new IntersectionObserver(es => es.forEach(e => { if (!e.isIntersecting) return; iio.unobserve(e.target); const el = e.target; requestAnimationFrame(() => el.classList.add('mls-iin')); }), {rootMargin: '0px 0px -6% 0px', threshold: .05});
+    const scan = () => D.querySelectorAll('.t-rec img,.t-rec .t-bgimg,.mk-img img').forEach(el => {
+      if (el.classList.contains('mls-img') || el.closest(IMGSKIP)) return; const r = el.getBoundingClientRect(); if (r.width < 90 || r.height < 70) return;
+      if (r.top < innerHeight * .9 && r.bottom > 0 && !anyReplay) return;   // уже на экране при загрузке — не прячем
+      el.classList.add('mls-img'); iio.observe(el); });
+    scan(); imo = new MutationObserver(() => { clearTimeout(imo.t); imo.t = setTimeout(scan, 250); }); imo.observe(D.body, {childList: true, subtree: true});
+  }
+  let anyReplay = false;
+  // ---------- прокрутка: полоса прочитанного, кнопка «наверх», шапка прячется при прокрутке вниз
+  let prog = null, topB = null, hdrEls = [], lastY = scrollY, scrollOn = false;
+  function onScroll(){
+    const c = window.mlStudioCfg || {}, y = scrollY, max = D.documentElement.scrollHeight - innerHeight;
+    if (prog) prog.style.setProperty('--p', max > 0 ? (y / max).toFixed(4) : 0);
+    if (topB) topB.classList.toggle('on', y > innerHeight * 1.2);
+    if (c.hdrHide){ const dy = y - lastY; if (y < 120 || dy < -6) root.classList.remove('mls-hdr-up'); else if (dy > 6 && !D.querySelector('.tmenu-mobile_opened,.t3113__popover_opened,.t706__cartwin_showed')) root.classList.add('mls-hdr-up'); }
+    lastY = y;
+  }
+  function scrollFx(c){
+    if (c.progress && !prog){ prog = D.createElement('div'); prog.className = 'mls-prog'; D.body.appendChild(prog); }
+    if (!c.progress && prog){ prog.remove(); prog = null; }
+    if (c.topBtn && !topB){ topB = D.createElement('button'); topB.className = 'mls-top'; topB.type = 'button'; topB.setAttribute('aria-label', 'Наверх');
+      topB.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5.5 11.5 12 5l6.5 6.5"/></svg>';
+      topB.onclick = () => scrollTo({top: 0, behavior: RMQ ? 'auto' : 'smooth'}); D.body.appendChild(topB); }
+    if (!c.topBtn && topB){ topB.remove(); topB = null; }
+    hdrEls.forEach(e => e.classList.remove('mls-hdr')); hdrEls = []; root.classList.remove('mls-hdr-up');
+    if (c.hdrHide){ const rec = D.querySelector('[data-record-type="3113"]');
+      if (rec) hdrEls = [...rec.querySelectorAll('*')].filter(e => getComputedStyle(e).position === 'fixed' && e.offsetHeight > 30 && !e.closest('.t3113__popover,.tmenu-mobile__menu'));
+      // чтобы не прятать вложенные дважды — берём только внешние
+      hdrEls = hdrEls.filter(e => !hdrEls.some(o => o !== e && o.contains(e))); hdrEls.forEach(e => e.classList.add('mls-hdr')); }
+    if (!scrollOn && (c.progress || c.topBtn || c.hdrHide)){ scrollOn = true; addEventListener('scroll', onScroll, {passive: true}); }
+    onScroll();
+  }
+  // ---------- звёзды на тёмных блоках
+  let skyT = 0;
+  const skyLayer = n => { const a = []; for (let i = 0; i < n; i++){ const x = (Math.random() * 100).toFixed(1), y = (Math.random() * 100).toFixed(1), r = (Math.random() < .85 ? 1 : 1.8);
+    a.push(`radial-gradient(${r}px ${r}px at ${x}% ${y}%,color-mix(in srgb,var(--ml-amber) 70%,#fff) 98%,transparent)`); } return a.join(','); };
+  let skyFirst = true;
+  function sky(c){
+    if (skyFirst && c.sky){ skyFirst = false; setTimeout(() => sky(window.mlStudioCfg || c), 1600); }   // тёмные блоки докрашиваются скриптами позже
+    D.querySelectorAll('.mls-sky').forEach(e => e.classList.remove('mls-sky')); D.querySelectorAll('.mls-up').forEach(e => e.classList.remove('mls-up'));
+    if (!c.sky) return;
+    if (!root.style.getPropertyValue('--mls-sky1')){ root.style.setProperty('--mls-sky1', skyLayer(70)); root.style.setProperty('--mls-sky2', skyLayer(70)); }
+    D.querySelectorAll('.t-rec').forEach(r => { if (r.matches('[data-record-type="3113"],[data-record-type="706"],[data-record-type="985"]') || r.querySelector('.ml-fl,.t-cover,.t-popup_show') || r.offsetHeight < 60) return;
+      const m = getComputedStyle(r).backgroundColor.match(/[\d.]+/g); if (!m || (m.length > 3 && +m[3] < .5)) return;
+      if ((.2126 * m[0] + .7152 * m[1] + .0722 * m[2]) / 255 > .3) return;
+      r.classList.add('mls-sky'); [...r.children].forEach(ch => { if (getComputedStyle(ch).position === 'static') ch.classList.add('mls-up'); }); });
+  }
+  new MutationObserver(() => { const c = window.mlStudioCfg || {}; if (!c.sky) return; clearTimeout(skyT); skyT = setTimeout(() => sky(c), 1000); }).observe(root, {attributes: true, attributeFilter: ['data-tod']});
+  // ---------- плавные переходы между страницами
+  let pfOn = false;
+  function pageFade(c){
+    root.classList.toggle('mls-pf', !!c.pageFade && !RMQ);
+    if (pfOn || !c.pageFade || RMQ) return; pfOn = true;
+    addEventListener('pageshow', () => root.classList.remove('mls-out'));
+    D.addEventListener('click', e => { const cc = window.mlStudioCfg || {}; if (!cc.pageFade || e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      const a = e.target.closest && e.target.closest('a[href]'); if (!a || a.target === '_blank' || a.hasAttribute('download') || a.closest('.mls-host')) return;
+      const raw = a.getAttribute('href'); if (!raw || raw[0] === '#' || /^(javascript|mailto|tel|whatsapp):/i.test(raw)) return;
+      let u; try { u = new URL(a.href, location.href); } catch (x){ return; }
+      if (u.origin !== location.origin || (u.pathname === location.pathname && u.search === location.search) || /tproduct|#!/.test(u.href)) return;
+      e.preventDefault(); root.classList.add('mls-out'); setTimeout(() => { location.href = u.href; }, 260); });
+  }
   // порядок и скрытие блоков — только примерка в студии (закреплять в редакторе Тильды)
   // группы: блок Тильды + наши вставки перед ним (например, фонарик перед скрытой обложкой)
   function groups(){
@@ -138,7 +268,10 @@ const mlStudio = (() => {
     if (t !== lastCss){ st.textContent = lastCss = t; }
     if (!st.isConnected) D.head.appendChild(st);
     const p = force ? null : prev; prev = JSON.parse(JSON.stringify(c));
-    const ready = () => { if (ch(AK, p, c)) anim(c); if (ch(['spacing'], p, c)) spacing(c.spacing); if (ch(['blocks'], p, c)) blocks(c); };
+    const ready = () => { if (ch(AK, p, c)) anim(c); if (ch(['spacing'], p, c)) spacing(c.spacing); if (ch(['blocks'], p, c)) blocks(c);
+      if (ch(['headAnim'], p, c)) heads(c); if (ch(['imgReveal'], p, c)) imgs(c); if (ch(['progress', 'topBtn', 'hdrHide'], p, c)) scrollFx(c);
+      if (ch(['sky'], p, c)) sky(c); if (ch(['pageFade'], p, c)) pageFade(c);
+      D.dispatchEvent(new Event('mls-apply')); };
     D.readyState === 'loading' ? D.addEventListener('DOMContentLoaded', ready, {once: true}) : ready();
   }
   apply(cfg);
@@ -159,7 +292,10 @@ const mlStudio = (() => {
   if (frame) addEventListener('storage', e => { if (e.key !== 'ml-studio-draft') return; let d = {}; try { d = JSON.parse(e.newValue || '{}'); } catch (x){}
     const prev = window.mlStudioCfg, next = Object.assign({}, head, d);
     if (prev.cursor !== next.cursor || prev.flash !== next.flash) location.reload(); else apply(next); });
-  return {get on(){ return on; }, frame, head, cfg, apply, groups, FONTS, COLORS, ls};
+  // проиграть появление заново (кнопка в Студии)
+  function replay(){ const c = window.mlStudioCfg || cfg; anyReplay = true; anim({}); heads({}); imgs({});
+    setTimeout(() => { anim(c); heads(c); imgs(c); anyReplay = false; }, 80); }
+  return {get on(){ return on; }, frame, head, cfg, apply, groups, replay, FONTS, COLORS, ls};
 })();
 window.mlStudioApi = mlStudio;
 
@@ -1657,13 +1793,28 @@ if (fine){
 
 }
 function cursorStar(){
-// ---------- курсор «звезда бренда»: 4-лучевая звезда из паттерна, за ней гаснущие точки;
-// над кнопкой звезда исчезает, янтарное кольцо обнимает кнопку по её форме, кнопка чуть тянется к курсору;
-// над обычной ссылкой лучи вытягиваются и звезда встаёт на 45°; клик — вспышка точек
+// ---------- курсор-конструктор (по умолчанию — «звезда бренда»). Всё настраивается в Студии и меняется вживую:
+// форма, размер, цвет, сияние, плавность, вращение, след, поведение над кнопкой, эффект клика.
+// над кнопкой (режим «кольцо») звезда исчезает, кольцо обнимает кнопку по её форме, кнопка чуть тянется к курсору
 const fine = matchMedia('(pointer:fine)').matches;
 if (fine){
-  const D = document, root = D.documentElement, AM = 'var(--mlc-moon,#BCD0E6)', AD = 'var(--mlc-moon-deep,#5F7896)';  // AD — на светлом фоне (утро/день): графитовая звезда с тёмно-лунным контуром
-  const pal = {}, mlRgba = (v, def, a) => { let c = pal[v]; if (!c){ const h = (getComputedStyle(root).getPropertyValue(v).trim() || def).replace('#', ''); const f = h.length === 3 ? h.split('').map(x => x + x).join('') : h; c = pal[v] = [0, 2, 4].map(i => parseInt(f.substr(i, 2), 16) || 0).join(','); } return 'rgba(' + c + ',' + a.toFixed(3) + ')'; };
+  const D = document, root = D.documentElement;
+  let O = window.mlStudioCfg || {};
+  const SHAPES = {
+    star: 'M0,-12 C1,-3 3,-1 12,0 C3,1 1,3 0,12 C-1,3 -3,1 -12,0 C-3,-1 -1,-3 0,-12Z',
+    star8: 'M0,-12 L1.6,-3.9 L7.8,-7.8 L3.9,-1.6 L12,0 L3.9,1.6 L7.8,7.8 L1.6,3.9 L0,12 L-1.6,3.9 L-7.8,7.8 L-3.9,1.6 L-12,0 L-3.9,-1.6 L-7.8,-7.8 L-1.6,-3.9Z',
+    dot: 'M-5,0a5,5 0 1,0 10,0a5,5 0 1,0 -10,0Z',
+    ring: 'M-8,0a8,8 0 1,0 16,0a8,8 0 1,0 -16,0Z',
+    crescent: 'M3,-9.5 A10,10 0 1,0 3,9.5 A11,11 0 0,1 3,-9.5Z',
+    diamond: 'M0,-11 L7,0 L0,11 L-7,0Z',
+    bulb: 'M0,-11 C5.5,-11 8,-7 8,-3.5 C8,0 5.5,2 4,4.5 L4,6.5 L-4,6.5 L-4,4.5 C-5.5,2 -8,0 -8,-3.5 C-8,-7 -5.5,-11 0,-11Z M-3.5,8 L3.5,8 L3.5,9.4 L-3.5,9.4Z M-2.2,10.6 L2.2,10.6 L2.2,11.8 L-2.2,11.8Z',
+    plus: 'M-1.4,-10 H1.4 V-1.4 H10 V1.4 H1.4 V10 H-1.4 V1.4 H-10 V-1.4 H-1.4Z',
+  };
+  window.mlCursorShapes = SHAPES;
+  const pal = {};
+  const hexRgb = h => { h = (h || '').trim().replace('#', ''); if (h.length === 3) h = h.split('').map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) || 0).join(','); };
+  const cvar = (v, def) => pal[v] || (pal[v] = hexRgb(getComputedStyle(root).getPropertyValue(v).trim() || def));
+  setInterval(() => { for (const k in pal) delete pal[k]; }, 1500);   // --glow меняется ползунком комнат, цвета — Студией
   const css = D.createElement('style');
   css.textContent = `html.ml-star-on,html.ml-star-on *{cursor:none!important}
 html.ml-star-on *::-webkit-slider-thumb{cursor:none!important}
@@ -1675,14 +1826,14 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
 .ml-star svg{display:block;overflow:visible}
 .ml-star-in .ml-star{opacity:1}
 .ml-star-in .ml-star.off{opacity:0}
-.ml-star-ring{opacity:0;transition:opacity .22s;box-shadow:0 0 0 1.5px ${AM},0 0 24px color-mix(in srgb,${AM} 60%,transparent),inset 0 0 14px color-mix(in srgb,${AM} 28%,transparent)}
+.ml-star-ring{opacity:0;transition:opacity .22s}
 .ml-star-ring.on{opacity:1}
-.ml-star-light .ml-star-ring{box-shadow:0 0 0 2px ${AD},0 0 22px color-mix(in srgb,${AD} 55%,transparent),inset 0 0 12px color-mix(in srgb,${AD} 22%,transparent)}
-.ml-star-cv{z-index:2147483646}`;
+.ml-star-cv{z-index:2147483646}
+html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
   D.head.appendChild(css);
-  root.classList.add('ml-star-on');
   const star = D.createElement('div'); star.className = 'ml-star';
-  star.innerHTML = '<svg viewBox="-13 -13 26 26" width="26" height="26"><path d="M0,-12 C1,-3 3,-1 12,0 C3,1 1,3 0,12 C-1,3 -3,1 -12,0 C-3,-1 -1,-3 0,-12Z" style="fill:#fff;stroke:' + AM + '" stroke-width="1.2" stroke-linejoin="round"/></svg>';
+  star.innerHTML = '<svg viewBox="-13 -13 26 26" width="26" height="26"><path stroke-linejoin="round"/></svg>';
+  const pth = star.querySelector('path'), svg = star.querySelector('svg');
   const ring = D.createElement('div'); ring.className = 'ml-star-ring';
   const cv = D.createElement('canvas'); cv.className = 'ml-star-cv';
   D.body.append(cv, ring, star);
@@ -1691,10 +1842,44 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
   const rs = () => { const r = devicePixelRatio || 1; W = innerWidth; H = innerHeight; cv.width = W*r; cv.height = H*r; cv.style.width = W + 'px'; cv.style.height = H + 'px'; ctx.setTransform(r,0,0,r,0,0); };
   rs(); addEventListener('resize', rs);
 
+  // настройки: читаем при каждом изменении в Студии
+  let opt = {};
+  function readOpts(){
+    O = window.mlStudioCfg || {};
+    opt = {off: O.cursor === 'off', shape: SHAPES[O.curShape] ? O.curShape : 'star', size: O.curSize || 1, color: O.curColor || 'auto', hex: O.curHex || '#BCD0E6',
+      halo: O.curHalo == null ? 1 : O.curHalo, lag: O.curLag || 0, spin: O.curSpin || 'speed', trail: O.curTrail || 'dots', len: O.curTrailLen || 1,
+      btn: O.curBtn || 'ring', pull: O.curPull == null ? 1 : O.curPull, click: O.curClick || 'burst', link: O.curLink !== 'none'};
+    root.classList.toggle('ml-star-on', !opt.off);
+    const big = 26 * opt.size; star.style.width = star.style.height = big + 'px'; star.style.margin = (-big / 2) + 'px 0 0 ' + (-big / 2) + 'px';
+    svg.setAttribute('width', big); svg.setAttribute('height', big);
+    pth.setAttribute('d', SHAPES[opt.shape]);
+    lastDark = null; trail.length = 0;
+  }
+  // цвет курсора: на тёмном фоне и на светлом
+  function rgb(){ const m = opt.color;
+    if (m === 'warm') return dark ? cvar('--glow', '#FFC37A') : '214,140,60';
+    if (m === 'mono') return dark ? '255,255,255' : cvar('--mlc-graphite', '#2F3438');
+    if (m === 'custom') return hexRgb(opt.hex);
+    return dark ? cvar('--mlc-moon', '#BCD0E6') : cvar('--mlc-moon-deep', '#5F7896'); }
+  const rgba = (a) => 'rgba(' + rgb() + ',' + Math.max(0, Math.min(1, a)).toFixed(3) + ')';
+  function paint(){
+    const C = rgba(1), outline = opt.shape === 'ring';
+    let fill, stroke;
+    if (opt.color === 'mono'){ fill = dark ? '#fff' : 'var(--mlc-graphite,#2F3438)'; stroke = dark ? 'rgba(255,255,255,.35)' : '#fff'; }
+    else if (opt.color === 'custom' || opt.color === 'warm'){ fill = dark ? '#fff' : C; stroke = dark ? C : '#fff'; }
+    else { fill = dark ? '#fff' : 'var(--mlc-graphite,#2F3438)'; stroke = dark ? C : '#fff'; }
+    if (outline){ pth.style.fill = 'none'; pth.style.stroke = dark ? (opt.color === 'mono' ? '#fff' : C) : (opt.color === 'mono' ? 'var(--mlc-graphite,#2F3438)' : C); pth.setAttribute('stroke-width', 2.2); }
+    else { pth.style.fill = fill; pth.style.stroke = stroke; pth.setAttribute('stroke-width', dark ? '1.2' : '1.4'); }
+    const h = opt.halo;
+    svg.style.filter = !h ? 'none' : dark ? `drop-shadow(0 0 ${5 * h}px ${rgba(.95)})` : `drop-shadow(0 0 1.5px ${rgba(.9)}) drop-shadow(0 0 ${7 * h}px ${rgba(.6)})`;
+    ring.style.boxShadow = opt.btn === 'fill' ? `0 0 0 1px ${rgba(.5)},0 0 30px ${rgba(.35)}` : `0 0 0 ${dark ? 1.5 : 2}px ${C},0 0 ${24 * Math.max(.4, h)}px ${rgba(.6)},inset 0 0 14px ${rgba(.28)}`;
+    ring.style.background = opt.btn === 'fill' ? rgba(dark ? .22 : .18) : 'none';
+  }
+
   const LINK = 'a,button,input,label,select,textarea,[role=button],[role=tab],[role=switch],.lr-hs,.js-product';
   // «кнопка» = ссылка/кнопка с собственным фоном или рамкой и кнопочным размером
   function asButton(el){
-    if (!el || el.closest('.ml-star-skip')) return null;
+    if (!el || el.closest('.ml-star-skip,.mls-host')) return null;
     const b = el.closest('.t-btn,.t-btnflex,.t-submit,.ml-btn,.ml-fl-sw,.t-store__card__btn,.t-catalog__card__btn,button,a,[role=button]');
     if (!b) return null;
     const r = b.getBoundingClientRect(); if (r.height < 26 || r.height > 90 || r.width > 520 || r.width < 40) return null;
@@ -1704,7 +1889,7 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
     const filled = bg && (bg.length < 4 || +bg[3] > .3), bordered = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none';
     return filled || bordered ? b : null;
   }
-  let lastDark = null, mx = -500, my = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
+  let inPanel = false, lastDark = null, mx = -500, my = -500, sx = -500, sy = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
   function probe(){
     const el = D.elementFromPoint(mx, my); if (!el) return;
     let n = el, c = null;
@@ -1712,76 +1897,113 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
       if (m && (m.length < 4 || +m[3] > .5)){ c = m; break; } n = n.parentElement; }
     if (c) dark = (.2126*c[0] + .7152*c[1] + .0722*c[2]) / 255 < .45;
     if (dark === lastDark) return; lastDark = dark;
-    const pth = star.querySelector('path');
-    pth.style.fill = dark ? '#fff' : 'var(--mlc-graphite,#2F3438)'; pth.style.stroke = dark ? AM : '#fff'; pth.setAttribute('stroke-width', dark ? '1.2' : '1.4');
-    star.querySelector('svg').style.filter = dark ? `drop-shadow(0 0 5px ${AM})` : `drop-shadow(0 0 1.5px ${AD}) drop-shadow(0 0 7px color-mix(in srgb,${AD} 70%,transparent))`;
-    root.classList.toggle('ml-star-light', !dark);
+    paint(); root.classList.toggle('ml-star-light', !dark);
   }
   function target(el){
     beam = !!(el && el.closest('.fl-box') && !el.closest('.ml-fl-ui') && !el.closest('.ml-fl.lit'));  // в фонарике курсор = луч; свет включён — снова звезда
-    const b = beam ? null : asButton(el);
+    inPanel = !!(el && el.closest && el.closest('.mls-host'));   // над панелью Студии — обычная стрелка
+    const b = beam || opt.off || inPanel ? null : asButton(el);
     if (btn && btn !== b){ btn.style.translate = ''; }
     btn = b; link = !b && !!(el && el.closest(LINK));
-    star.classList.toggle('off', beam || !!btn);
-    ring.classList.toggle('on', !!btn);
+    const hug = btn && (opt.btn === 'ring' || opt.btn === 'fill');
+    star.classList.toggle('off', inPanel || beam || (btn && opt.btn === 'ring'));
+    ring.classList.toggle('on', !!hug);
     if (btn){ const r = btn.getBoundingClientRect(), br = parseFloat(getComputedStyle(btn).borderTopLeftRadius) || 0;
-      if (!ring.classList.contains('was')){ rx = mx; ry = my; rw = 10; rh = 10; }
+      if (!ring.classList.contains('was')){ rx = sx; ry = sy; rw = 10; rh = 10; }
       rr = Math.min(br + 6, (r.height + 12)/2); }
-    ring.classList.toggle('was', !!btn);
+    ring.classList.toggle('was', !!hug);
   }
   addEventListener('pointermove', e => {
     if (e.pointerType !== 'mouse') return;
     mx = e.clientX; my = e.clientY;
-    if (!seen){ seen = true; px = mx; py = my; root.classList.add('ml-star-in'); probe(); }
+    if (!seen){ seen = true; px = sx = mx; py = sy = my; root.classList.add('ml-star-in'); probe(); }
     target(e.target);
   }, {passive:true});
   addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') clickAt = performance.now(); });
   addEventListener('scroll', () => { lastProbe = 0; if (seen) target(D.elementFromPoint(mx, my)); }, {passive:true});
   D.addEventListener('mouseleave', () => { root.classList.remove('ml-star-in'); target(null); });
   D.addEventListener('mouseenter', () => { if (seen) root.classList.add('ml-star-in'); });
+  D.addEventListener('mls-apply', () => { readOpts(); if (seen){ probe(); target(D.elementFromPoint(mx, my)); } });
 
-  const dots = []; let dotsDirty = false, ang = 0, sc = 1, lastDot = 0, rx = 0, ry = 0, rw = 10, rh = 10, rr = 20;
+  const dots = [], trail = []; let dotsDirty = false, ang = 0, sc = 1, lastDot = 0, rx = 0, ry = 0, rw = 10, rh = 10, rr = 20;
   const K = RM ? 1 : 0;
+  // маленькая 4-лучевая звезда на холсте (искры)
+  function spark(x, y, r, a){ ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath();
+    for (let i = 0; i < 4; i++){ ctx.rotate(Math.PI / 2); ctx.moveTo(0, -r); ctx.quadraticCurveTo(r * .12, -r * .12, r, 0); ctx.lineTo(0, 0); }
+    ctx.closePath(); ctx.restore(); }
+  readOpts();
   function frame(t){
     requestAnimationFrame(frame);
-    if (!seen) return;
+    if (!seen || opt.off){ if (dotsDirty){ ctx.clearRect(0, 0, W, H); dotsDirty = false; dots.length = 0; } return; }
     if (t - lastProbe > 120){ lastProbe = t; probe();
       // кнопку закрыли/перекрыли без движения мыши (корзина, окно) — кольцо не должно висеть в пустоте
       if (btn && seen){ const h = D.elementFromPoint(mx, my); if (!h || !btn.isConnected || !(btn === h || btn.contains(h))) target(h); } }
-    const vx = mx - px; px = mx;
-    // звезда: вращается от горизонтальной скорости, над ссылкой — на 45° и крупнее
-    if (!RM) ang += vx * .6 + (link ? (45 - ((ang % 90) + 90) % 90) * .12 : 0);
-    sc = lerp(sc, link ? 1.6 : 1, K || .15);
-    star.style.transform = `translate3d(${mx}px,${my}px,0) rotate(${ang}deg) scale(${sc})`;
+    // плавность: курсор догоняет мышь с инерцией
+    const f = RM ? 1 : 1 - Math.min(.92, opt.lag * .95);
+    sx = lerp(sx, mx, f); sy = lerp(sy, my, f);
+    const vx = sx - px; px = sx;
+    const vy = sy - py; py = sy; const sp = Math.hypot(vx, vy);
+    // вращение: от скорости / спокойно / всё время; над ссылкой — на 45° и крупнее
+    const tgt = link && opt.link ? 45 : 0;
+    if (!RM){ if (opt.spin === 'spin') ang += 1.4; else if (opt.spin === 'still') ang = lerp(ang, Math.round(ang / 90) * 90 + tgt, .15);
+      else ang += vx * .6 + (tgt ? (45 - ((ang % 90) + 90) % 90) * .12 : 0); }
+    const grow = (link && opt.link ? 1.6 : 1) * (btn && opt.btn === 'magnet' ? 1.5 : 1) * (btn && opt.btn === 'none' ? 1.3 : 1);
+    sc = lerp(sc, grow, K || .15);
+    star.style.transform = `translate3d(${sx}px,${sy}px,0) rotate(${ang}deg) scale(${sc})`;
     // кнопку под курсором убрали из страницы (перерисовка) — берём то, что теперь под курсором
     if (btn && !btn.isConnected){ btn = null; target(D.elementFromPoint(mx, my)); }
-    // кольцо вокруг кнопки + кнопка тянется к курсору
+    // над кнопкой: кнопка тянется к курсору; кольцо обнимает её или под курсором — полупрозрачный круг
     if (btn){
       const r = btn.getBoundingClientRect();
       const cx = r.left + r.width/2, cy = r.top + r.height/2;
       const still = RM || btn.closest('.ml-chips');   // в листаемой строке фильтров кнопки не тянем — иначе наезжают друг на друга
-      const ox = still ? 0 : (mx - cx) * .18, oy = still ? 0 : (my - cy) * .25;
+      const k = opt.pull * (opt.btn === 'magnet' ? 1.6 : 1);
+      const ox = still ? 0 : (mx - cx) * .18 * k, oy = still ? 0 : (my - cy) * .25 * k;
       btn.style.translate = `${ox.toFixed(1)}px ${oy.toFixed(1)}px`;
-      rx = lerp(rx, cx + ox*.5, K || .25); ry = lerp(ry, cy + oy*.5, K || .25);
-      rw = lerp(rw, r.width + 12, K || .22); rh = lerp(rh, r.height + 12, K || .22);
-      const blink = t - clickAt < 160;
-      const rs_ = ring.style; rs_.width = rw + 'px'; rs_.height = rh + 'px'; rs_.borderRadius = rr + 'px';
-      rs_.transform = `translate3d(${rx - rw/2}px,${ry - rh/2}px,0) scale(${blink ? .96 : 1})`;
+      const blink = t - clickAt < 160, rs_ = ring.style;
+      if (opt.btn === 'ring'){
+        rx = lerp(rx, cx + ox*.5, K || .25); ry = lerp(ry, cy + oy*.5, K || .25);
+        rw = lerp(rw, r.width + 12, K || .22); rh = lerp(rh, r.height + 12, K || .22);
+        rs_.width = rw + 'px'; rs_.height = rh + 'px'; rs_.borderRadius = rr + 'px';
+        rs_.transform = `translate3d(${rx - rw/2}px,${ry - rh/2}px,0) scale(${blink ? .96 : 1})`;
+      } else if (opt.btn === 'fill'){
+        const d = Math.min(64, r.height + 14) * Math.max(.8, opt.size);
+        rx = lerp(rx, sx, K || .35); ry = lerp(ry, sy, K || .35); rw = lerp(rw, d, K || .2); rh = rw;
+        rs_.width = rw + 'px'; rs_.height = rh + 'px'; rs_.borderRadius = '50%';
+        rs_.transform = `translate3d(${rx - rw/2}px,${ry - rh/2}px,0) scale(${blink ? .85 : 1})`;
+      }
     }
-    // след из точек и вспышка по клику
-    const vy = my - py; py = my; const sp = Math.hypot(vx, vy);
-    if (!RM && !beam && !btn && sp > 2 && t - lastDot > 30){ lastDot = t;
-      dots.push({x:mx + (Math.random()-.5)*10, y:my + (Math.random()-.5)*10, r:1 + Math.random()*1.6, b:t, life:700 + Math.random()*500, vx:0, vy:.15}); }
+    // след
+    const tr = !RM && !beam && !inPanel && !(btn && opt.btn === 'ring') ? opt.trail : 'none', L = opt.len;
+    if (tr === 'dots' && sp > 2 && t - lastDot > 30){ lastDot = t;
+      dots.push({x:sx + (Math.random()-.5)*10, y:sy + (Math.random()-.5)*10, r:1 + Math.random()*1.6, b:t, life:(700 + Math.random()*500) * L, vx:0, vy:.15}); }
+    if (tr === 'sparks' && sp > 1.5 && t - lastDot > 45){ lastDot = t;
+      dots.push({x:sx + (Math.random()-.5)*18, y:sy + (Math.random()-.5)*18, r:3 + Math.random()*4, b:t, life:(600 + Math.random()*600) * L, vx:(Math.random()-.5)*.6, vy:.3 + Math.random()*.4, s:1, a:Math.random()*3}); }
+    if (tr === 'comet' || tr === 'light'){ trail.push({x:sx, y:sy, t}); }
+    while (trail.length && (t - trail[0].t > (tr === 'comet' ? 260 * L : 600 * L) || trail.length > 120)) trail.shift();
+    if (tr !== 'comet' && tr !== 'light') trail.length = 0;
+    // клик: вспышка точек / волна / звёзды
     if (!RM && !beam && t - clickAt < 40 && !burst){ burst = true;
-      for (let i = 0; i < 14; i++){ const a = i/14*Math.PI*2; dots.push({x:mx, y:my, r:1.6 + Math.random(), b:t, life:800, vx:Math.cos(a)*2.4, vy:Math.sin(a)*2.4}); } }
+      if (opt.click === 'burst') for (let i = 0; i < 14; i++){ const a = i/14*Math.PI*2; dots.push({x:sx, y:sy, r:1.6 + Math.random(), b:t, life:800, vx:Math.cos(a)*2.4, vy:Math.sin(a)*2.4}); }
+      if (opt.click === 'ripple') dots.push({x:sx, y:sy, b:t, life:650, w:1}), dots.push({x:sx, y:sy, b:t + 120, life:650, w:1});
+      if (opt.click === 'stars') for (let i = 0; i < 9; i++){ const a = Math.random()*Math.PI*2, v = 1.5 + Math.random()*3; dots.push({x:sx, y:sy, r:3 + Math.random()*4, b:t, life:900, vx:Math.cos(a)*v, vy:Math.sin(a)*v - 1, s:1, a:Math.random()*3, g:.08}); }
+    }
     if (t - clickAt >= 40) burst = false;
-    if (dots.length || dotsDirty){
-      ctx.clearRect(0, 0, W, H); dotsDirty = dots.length > 0;
+    if (dots.length || trail.length || dotsDirty){
+      ctx.clearRect(0, 0, W, H); dotsDirty = dots.length > 0 || trail.length > 0;
+      if (trail.length > 1 && tr === 'comet'){ ctx.lineCap = 'round';
+        for (let i = 1; i < trail.length; i++){ const k = i / trail.length; ctx.beginPath(); ctx.moveTo(trail[i-1].x, trail[i-1].y); ctx.lineTo(trail[i].x, trail[i].y);
+          ctx.lineWidth = 1 + k * 5 * opt.size; ctx.strokeStyle = rgba(k * .75); ctx.stroke(); } }
+      if (trail.length && tr === 'light'){ const p = trail[0], R = 120 * L * opt.size;
+        const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, R); g.addColorStop(0, rgba(dark ? .22 : .16)); g.addColorStop(1, rgba(0));
+        ctx.fillStyle = g; ctx.fillRect(p.x - R, p.y - R, R * 2, R * 2); }
       for (let i = dots.length - 1; i >= 0; i--){ const d = dots[i], k = (t - d.b)/d.life;
-        if (k >= 1){ dots.splice(i, 1); continue; }
-        d.x += d.vx; d.y += d.vy; d.vx *= .94; d.vy *= .94;
+        if (k >= 1){ dots.splice(i, 1); continue; } if (k < 0) continue;
+        if (d.w){ ctx.beginPath(); ctx.arc(d.x, d.y, 6 + k * 46 * opt.size, 0, 7); ctx.lineWidth = 2 * (1 - k); ctx.strokeStyle = rgba((1 - k) * .9); ctx.stroke(); continue; }
+        d.x += d.vx; d.y += d.vy; d.vx *= .94; d.vy *= .94; if (d.g) d.vy += d.g;
+        if (d.s){ const tw = .55 + .45 * Math.sin(t / 90 + d.a * 5); spark(d.x, d.y, d.r * (1 - k * .4), d.a + k * 2); ctx.fillStyle = rgba((1 - k) * tw); ctx.fill(); continue; }
         ctx.beginPath(); ctx.arc(d.x, d.y, d.r*(1 - k*.5), 0, 7);
-        ctx.fillStyle = dark ? mlRgba("--mlc-moon", "#BCD0E6", (1-k)*.9) : mlRgba("--mlc-moon-deep", "#5F7896", (1-k)*.85); ctx.fill(); }
+        ctx.fillStyle = rgba((1-k)*.9); ctx.fill(); }
     }
   }
   requestAnimationFrame(frame);
@@ -1887,7 +2109,8 @@ const go = () => {
   if (has('rooms')) rooms();
   if (has('extras') && !(SCRIPT && SCRIPT.dataset.extras === 'off')) extras();
   const CUR = (window.mlStudioCfg || {}).cursor || (SCRIPT && SCRIPT.dataset.cursor);
-  if (has('cursor') && CUR !== 'off') ({glow:cursor, spot:cursorSpot}[CUR] || cursorStar)();
+  // конструктор курсора работает и при «Обычный» (спит) — чтобы Студия переключала курсор без перезагрузки
+  if (has('cursor') && (CUR !== 'off' || window.mlStudioApi && window.mlStudioApi.on)) ({glow:cursor, spot:cursorSpot}[CUR] || cursorStar)();
 };
 document.readyState === 'loading' ? document.addEventListener('DOMContentLoaded', go) : go();
 })();

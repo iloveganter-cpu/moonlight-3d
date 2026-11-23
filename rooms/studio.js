@@ -194,25 +194,26 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
     const names = {'123': own ? ({'ml-rooms': 'Живые комнаты', 'ml-cat': 'Каталог раздела'}[own.id] || 'Свой код ' + own.id) : 'HTML-код', '183': 'Обложка', '2861': 'Каталог', '738': 'Логотипы брендов', '1331': '3D-модели', '3113': 'Шапка', '706': 'Корзина', '985': 'Поиск'};
     const txt = (r.querySelector('.t-section__title,.t-title,.t-name,h1,h2,.t-text') || {}).textContent || '';
     return [names[t] || 'Блок T' + t, txt.trim().replace(/\s+/g, ' ').slice(0, 48)]; };
-  const pageRecs = () => [...D.querySelectorAll('.t-rec')].filter(r => !r.parentElement.closest('.t-rec') && (r.offsetHeight > 0 || r.classList.contains('mls-hide')) && !/^(3113|706|985|360|228|257)$/.test(r.getAttribute('data-record-type')));
+  const vis = g => g.els.some(e => e.offsetHeight > 0 || e.classList.contains('mls-hide'));
+  // все группы страницы в текущем порядке (видимые и служебные), порядок примерки — поверх
+  function ordered(){ const gs = S.groups(), b = (st.blocks || {})[location.pathname] || {}; const ord = (b.order || []).filter(id => gs.some(g => g.id === id));
+    gs.forEach(g => { if (!ord.includes(g.id)) ord.push(g.id); }); return ord.map(id => gs.find(g => g.id === id)); }
   function blocksUI(){
-    const p = location.pathname; st.blocks = st.blocks || {}; const b = st.blocks[p] || {};
-    let recs = pageRecs(); const ord = b.order || recs.map(r => r.id);
-    recs.sort((x, y) => (ord.indexOf(x.id) + 1 || 999) - (ord.indexOf(y.id) + 1 || 999));
-    const hid = new Set(b.hidden || []);
+    const b = (st.blocks || {})[location.pathname] || {}, hid = new Set(b.hidden || []);
+    const list = ordered().filter(vis);
     return `<div class="note">Примерка: двигайте блоки этой страницы и прячьте лишние. Это видно <b>только вам</b>. Понравилось — повторите тот же порядок в редакторе Тильды (там блоки двигаются стрелками ↑↓ справа от блока).</div>
-      ${recs.map((r, i) => { const [n, s] = recName(r); return `<div class="bl${hid.has(r.id) ? ' off' : ''}" data-id="${r.id}"><span style="color:#7D8690;width:18px">${i + 1}</span><div class="n">${esc(n)}<small>${esc(s) || '&nbsp;'}</small></div>
-        <button class="ib" data-b="up" title="Выше">↑</button><button class="ib" data-b="down" title="Ниже">↓</button><button class="ib" data-b="eye" title="Скрыть/показать">${hid.has(r.id) ? '◌' : '👁'}</button><button class="ib" data-b="go" title="Показать на странице">⌖</button></div>`; }).join('')}
+      ${list.map((g, i) => { const [n, s] = recName(g.rec, g); return `<div class="bl${hid.has(g.id) ? ' off' : ''}" data-id="${g.id}"><span style="color:#7D8690;width:18px">${i + 1}</span><div class="n">${esc(n)}<small>${esc(s) || '&nbsp;'}</small></div>
+        <button class="ib" data-b="up" title="Выше">↑</button><button class="ib" data-b="down" title="Ниже">↓</button><button class="ib" data-b="eye" title="Скрыть/показать">${hid.has(g.id) ? '◌' : '👁'}</button><button class="ib" data-b="go" title="Показать на странице">⌖</button></div>`; }).join('')}
       <button class="big sec" data-a="blocks-reset">Вернуть порядок как в Тильде</button>`;
   }
   function moveBlock(id, act){
     const p = location.pathname; st.blocks = st.blocks || {}; const b = st.blocks[p] = st.blocks[p] || {};
-    const recs = pageRecs(); let ord = (b.order || []).filter(x => recs.some(r => r.id === x)); recs.forEach(r => { if (!ord.includes(r.id)) ord.push(r.id); });
-    const i = ord.indexOf(id); push();
-    if (act === 'up' && i > 0) [ord[i - 1], ord[i]] = [ord[i], ord[i - 1]];
-    if (act === 'down' && i < ord.length - 1) [ord[i + 1], ord[i]] = [ord[i], ord[i + 1]];
+    const all = ordered(), ord = all.map(g => g.id), visIds = all.filter(vis).map(g => g.id);
+    if (act === 'go'){ const g = all.find(x => x.id === id), el = g && (g.els.find(e => e.offsetHeight > 0) || g.rec); if (el){ el.scrollIntoView({behavior: 'smooth', block: 'start'}); el.style.outline = '2px solid #BCD0E6'; setTimeout(() => el.style.outline = '', 1400); } return; }
+    push();
+    const vi = visIds.indexOf(id), other = act === 'up' ? visIds[vi - 1] : act === 'down' ? visIds[vi + 1] : null;
+    if (other){ ord.splice(ord.indexOf(id), 1); const c = ord.indexOf(other); ord.splice(act === 'up' ? c : c + 1, 0, id); }
     if (act === 'eye'){ const h = new Set(b.hidden || []); h.has(id) ? h.delete(id) : h.add(id); b.hidden = [...h]; }
-    if (act === 'go'){ const r = D.getElementById(id); if (r) r.scrollIntoView({behavior: 'smooth', block: 'start'}); r && (r.style.outline = '2px solid #BCD0E6', setTimeout(() => r.style.outline = '', 1400)); return; }
     b.order = ord; save(); S.apply(st); render();
   }
 

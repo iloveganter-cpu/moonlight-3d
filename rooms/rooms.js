@@ -765,7 +765,9 @@ function extras(){
       return {info: first.partinfo || {}, crumbs: first.breadcrumbs || [], parts, total: first.total || items.length, items};
     }
     // прямые подразделы раздела по порядку из Тильды
-    const kids = (parts, uid) => parts.filter(p => p.par === String(uid) && !p.root).sort((a, b) => a.sort - b.sort);
+    // (у разделов верхнего уровня parentuid пустой — они дети корня «Все»)
+    const kids = (parts, uid) => { uid = String(uid); const r = parts.find(p => p.root), isRoot = !parts.some(p => p.uid === uid) || (r && r.uid === uid);
+      return parts.filter(p => !p.root && (p.par === uid || (isRoot && !p.par))).sort((a, b) => a.sort - b.sort); };
     const rootOf = parts => parts.find(p => p.root);
     // к какому из прямых подразделов относится товар (с учётом вложенности глубже)
     function kidOf(parts, uid){

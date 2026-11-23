@@ -703,6 +703,76 @@ function extras(){
     D.addEventListener('keydown', e => { if (e.key === 'Escape' && !pop.hidden) close(); });
     return {card, add, bind, open, isOpen: () => !pop.hidden, priceHtml};
   }
+  // ---------- живой каталог Тильды: товары, разделы и описания берутся прямо из «Каталога товаров» проекта.
+  // Страница сама сообщает свой раздел: родной блок каталога Тильды (ST340… и т.п.) кладёт в код var options={recid,storepart}.
+  // На адресах /catalog/<uid>-<slug> Тильда подставляет раздел сама, на обычной странице — раздел, выбранный в настройках блока.
+  const mlStore = (() => {
+    const API = 'https://store.tildaapi.one/api/getproductslist/';
+    const tx = D.createElement('textarea');
+    const clean = s => { tx.innerHTML = String(s || '').replace(/<[^>]+>/g, ' '); return tx.value.replace(/\s+/g, ' ').trim(); };
+    // характеристики: сначала родное поле Тильды «Характеристики», потом строки «Ключ: значение» из текста товара
+    function specs(p){
+      const out = [], seen = new Set();
+      const push = (k, v) => { k = String(k || '').trim().replace(/,$/, '').replace(/,?\s+мм$/, ', мм'); v = String(v || '').trim();
+        if (!k || !v || seen.has(k.toLowerCase()) || /^технические/i.test(k) || v.length > 80) return; seen.add(k.toLowerCase()); out.push([k, v]); };
+      (p.characteristics || []).forEach(c => push(c.title, c.value));
+      String(p.text || '').split(/<br\s*\/?>|<\/p>|<\/div>|<\/li>|\n/i).forEach(line => { const m = clean(line).match(/^([^:]{2,40}):\s*(.+)$/); if (m) push(m[1], m[2]); });
+      return out.slice(0, 16);
+    }
+    // бренд: поле «Бренд» в карточке товара. Если пусто — пробуем узнать по названию (подсказка, лучше заполнять поле)
+    const NORM = [['reluce', 'Reluce'], ['ambrella', 'Ambrella Light'], ['philips', 'PHILIPS'], ['st luce', 'ST Luce'], ['odeon', 'Odeon Light']];
+    const GUESS = ['Reluce', 'Ambrella', 'EGLO', 'MLT', 'LUMINAIR', 'Maytoni', 'Odeon', 'Lumion', 'Novotech', 'PHILIPS', 'Geniled', 'ST Luce', 'Schneider',
+      'Kranz', 'Arte Lamp', 'Citilux', 'Feron', 'Gauss', 'Elektrostandard', 'TOT', 'WESA', 'Crystal Lux', 'Vele Luce', 'Lightstar', 'Freya', 'Sonex', 'Loft It', 'Kink Light', 'Arlight'];
+    function brand(p){
+      const b = String(p.brand || '').trim();
+      if (b){ const n = NORM.find(([k]) => b.toLowerCase().startsWith(k)); return n ? n[1] : b; }
+      const t = p.title + ' ' + clean(p.text);
+      const g = GUESS.find(x => new RegExp('(^|[^\\wА-я])' + x.replace(/ /g, '\\s') + '([^\\wА-я]|$)', 'i').test(t));
+      if (!g) return '';
+      const n = NORM.find(([k]) => g.toLowerCase().startsWith(k)); return n ? n[1] : g === 'Schneider' ? 'Schneider Electric' : g;
+    }
+    const num = v => Math.round(parseFloat(String(v || '0').replace(/[^\d.,]/g, '').replace(',', '.')) || 0);
+    function item(p){
+      let gal = []; try { gal = JSON.parse(p.gallery || '[]').map(g => g.img).filter(Boolean); } catch (e) {}
+      const pr = num(p.price), po = num(p.priceold);
+      const x = {id: String(p.uid), n: clean(p.title), b: brand(p), s: p.sku || '', p: pr, i: gal[0] || '', u: p.url || '', sp: specs(p),
+        pu: (p.partuids || []).map(String)};
+      if (gal.length > 1) x.g = gal.slice(1, 6);
+      if (po > pr) x.po = po;
+      const d = clean(p.descr); if (d) x.d = d.slice(0, 300);
+      return x;
+    }
+    // настройки родного блока каталога на этой странице
+    function opts(){
+      for (const s of D.scripts){ const m = s.textContent.match(/var options=\{recid:'(\d+)',storepart:'(\d+)'/); if (m) return {rec: m[1], part: m[2]}; }
+      return null;
+    }
+    const url = (part, rec, slice, size) => `${API}?storepartuid=${part}&recid=${rec}&getallparts=true&getpartinfo=true&getbreadcrumbs%5B%5D=parts&slice=${slice}&size=${size}`;
+    // все товары раздела (с подразделами) + дерево разделов + крошки; size=1 — только сведения о разделе и первый товар
+    async function load(part, rec, size){
+      size = size || 500;
+      let slice = 1, first = null; const items = [];
+      for (let guard = 0; guard < 20; guard++){
+        const r = await fetch(url(part, rec, slice, size)); if (!r.ok) throw new Error('store ' + r.status);
+        const j = await r.json(); if (!first) first = j;
+        (j.products || []).forEach(p => items.push(item(p)));
+        if (size < 500 || !j.nextslice || j.nextslice == slice) break; slice = j.nextslice;
+      }
+      const parts = (first.parts || []).filter(p => !p.hideonpublic).map(p => ({uid: String(p.uid), t: p.title, h: p.alias || '', img: p.img || '',
+        d: p.description || '', par: String(p.parentuid || ''), root: !!p.root, sort: +p.sort || 0}));
+      return {info: first.partinfo || {}, crumbs: first.breadcrumbs || [], parts, total: first.total || items.length, items};
+    }
+    // прямые подразделы раздела по порядку из Тильды
+    const kids = (parts, uid) => parts.filter(p => p.par === String(uid) && !p.root).sort((a, b) => a.sort - b.sort);
+    const rootOf = parts => parts.find(p => p.root);
+    // к какому из прямых подразделов относится товар (с учётом вложенности глубже)
+    function kidOf(parts, uid){
+      const byId = {}; parts.forEach(p => byId[p.uid] = p);
+      const ks = new Set(kids(parts, uid).map(k => k.uid));
+      return x => { for (const pu of x.pu){ let c = byId[pu], g = 0; while (c && g++ < 8){ if (ks.has(c.uid)) return c.uid; c = byId[c.par]; } } return ''; };
+    }
+    return {opts, load, kids, kidOf, rootOf, clean};
+  })();
   // ---------- каталог: панель разделов слева + выезжающая шторка, товары Тильды справа
   // страницы, которые уже собраны на тест-сайте: ссылки живого сайта ведут на них (только на *.tilda.ws)
   const ML_LOCAL = {'/kranz_round': '/kranz'};
@@ -802,7 +872,7 @@ function extras(){
       curSlug = 'all'; pick('all'); moreW.hidden = true; grid.classList.add('ml-hc-tiles');
       const ks = Object.keys(idx), total = ks.reduce((s, k) => s + idx[k].n, 0);
       hd.innerHTML = `<b>Все разделы</b><span>${ks.length} ${mlPlural(ks.length, 'раздел', 'раздела', 'разделов')} · ${mlFmt(total)} ${mlPlural(total, 'товар', 'товара', 'товаров')}</span>`;
-      grid.innerHTML = ks.map(k => { const c = idx[k]; return `<a class="mk-card ml-hc-tile" href="/${k}" data-s="${k}">
+      grid.innerHTML = ks.map(k => { const c = idx[k]; return `<a class="mk-card ml-hc-tile" href="${esc(c.h || '/' + k)}" data-s="${k}">
   <div class="mk-img">${c.i ? `<img src="${esc(c.i)}" alt="" loading="lazy">` : ''}</div><h3>${esc(c.t)}</h3>
   <div class="mk-sku">${c.n} ${mlPlural(c.n, 'товар', 'товара', 'товаров')}</div></a>`; }).join('') + extraTiles();
       anim();
@@ -825,10 +895,10 @@ function extras(){
       if (slug === 'all' || !idx[slug]){ overview(); return; }
       curSlug = slug; shown = HPAGE; pick(slug); grid.classList.remove('ml-hc-tiles');
       const c = idx[slug];
-      hd.innerHTML = `<b>${esc(c.t)}</b><span>${c.n} ${mlPlural(c.n, 'товар', 'товара', 'товаров')}</span><a href="/${slug}">Весь раздел<i aria-hidden="true">→</i></a>`;
+      hd.innerHTML = `<b>${esc(c.t)}</b><span>${c.n} ${mlPlural(c.n, 'товар', 'товара', 'товаров')}</span><a href="${esc(c.h || '/' + slug)}">Весь раздел<i aria-hidden="true">→</i></a>`;
       if (cache[slug]){ draw(true); return; }
       const my = ++req; grid.innerHTML = '<div class="mk-load ml-hc-load">Загружаем…</div>'; moreW.hidden = true;
-      fetch(BASE + 'cats/' + slug + '.json').then(r => r.json()).then(d => { cache[slug] = d; if (my === req && curSlug === slug) draw(true); })
+      (so ? mlStore.load(slug, so.rec).then(st => ({items: st.items})) : fetch(BASE + 'cats/' + slug + '.json').then(r => r.json())).then(d => { cache[slug] = d; if (my === req && curSlug === slug) draw(true); })
         .catch(() => { if (my === req) grid.innerHTML = '<div class="mk-load ml-hc-load">Не удалось загрузить товары. Попробуйте ещё раз.</div>'; });
     }
     moreW.firstChild.onclick = () => { const y = scrollY; shown += HPAGE; draw(false); scrollTo(0, y); };
@@ -839,7 +909,14 @@ function extras(){
       const top = hc.getBoundingClientRect().top; if (top < 0) scrollBy({top: top - ((D.querySelector('.t3113__header') || {}).offsetHeight || 80) - 70, behavior: RM ? 'auto' : 'smooth'}); } });
     chips.addEventListener('click', e => { const b = e.target.closest('button'); if (b && !chips.classList.contains('drag')) hcShow(b.dataset.s); });
     grid.innerHTML = '<div class="mk-load ml-hc-load">Загружаем каталог…</div>';
-    fetch(BASE + 'cats/index.json').then(r => r.json()).then(j => {
+    // живой режим: разделы верхнего уровня из «Каталога товаров» Тильды (порядок, названия, картинки — оттуда же)
+    const so = mlStore.opts();
+    const liveIdx = () => mlStore.load(so.part, so.rec, 1).then(st => {
+      const tops = mlStore.kids(st.parts, so.part), j = {};
+      return Promise.all(tops.map(t => mlStore.load(t.uid, so.rec, 1).then(r => { if (r.total) j[t.uid] = {t: t.t, n: r.total, i: t.img || (r.items[0] || {}).i || '', h: t.h}; }, () => {})))
+        .then(() => { const o = {}; tops.forEach(t => { if (j[t.uid]) o[t.uid] = j[t.uid]; }); return o; });
+    });
+    (so ? liveIdx() : fetch(BASE + 'cats/index.json').then(r => r.json())).then(j => {
       idx = j;
       chips.innerHTML = [['all', 'Все разделы']].concat(Object.keys(j).map(k => [k, j[k].t])).map(([k, t]) => `<button type="button" role="tab" data-s="${k}">${esc(t)}</button>`).join('');
       overview(); arrows();
@@ -1210,6 +1287,20 @@ function extras(){
     if (scrollY < 5){ pad(); setTimeout(pad, 800); }
     addEventListener('resize', () => { if (scrollY < 5) pad(); });
     if (brand === '') { location.replace('/#ml-catalog'); return; }
+    // живой режим: на странице есть родной блок каталога Тильды → раздел и товары берём из каталога, блок прячем
+    const so = !brand && mlStore.opts();
+    if (so){
+      const rec = D.getElementById('rec' + so.rec); if (rec) rec.style.display = 'none';
+      mlStore.load(so.part, so.rec).then(st => {
+        const info = st.info, cr = st.crumbs, par = cr.length > 1 ? cr[cr.length - 2] : null;
+        const kid = mlStore.kidOf(st.parts, so.part);
+        st.items.forEach(x => { x.k = kid(x); });
+        const types = mlStore.kids(st.parts, so.part).map(k => ({id: k.uid, n: k.t, h: k.h})).filter(t => st.items.some(x => x.k === t.id));
+        const title = info.title || (info.root || !par ? 'Каталог' : '');
+        if (!info.title) D.title = 'Каталог — Moonlight';
+        build({live: true, title, parent: par ? (par.title || 'Каталог') : '', parentHref: par ? par.alias : '', about: info.description || '', types, items: st.items});
+      }).catch(() => { if (rec) rec.style.display = ''; host.innerHTML = ''; });
+    } else
     fetch(BASE + (brand ? 'brands/' + brand : 'cats/' + slug) + '.json').then(r => r.json()).then(build).catch(() => { if (brand){ location.replace('/#ml-catalog'); return; } host.innerHTML = '<div class="mk-load">Не удалось загрузить товары. Обновите страницу.</div>'; });
 
     function build(data){
@@ -1227,10 +1318,10 @@ function extras(){
 
       host.innerHTML = `
 <div class="mk-wrap">
-  <nav class="mk-crumbs"><a href="/">Главная</a><span>/</span><a href="/#ml-catalog">${esc(data.parent || 'Каталог')}</a><span>/</span><b>${esc(data.title)}</b></nav>
+  <nav class="mk-crumbs"><a href="/">Главная</a><span>/</span>${data.live && !data.parent ? '' : `<a href="${esc(data.parentHref || '/#ml-catalog')}">${esc(data.parent || 'Каталог')}</a><span>/</span>`}<b>${esc(data.title)}</b></nav>
   <section class="mk-hero">
     <div class="mk-hero-t">
-      <div class="mk-eye">${esc(data.parent || 'каталог')}</div>
+      <div class="mk-eye">${esc(data.parent || 'каталог')}</div>${data.live && !data.items.length ? '<p>В этом разделе пока нет товаров.</p>' : ''}
       <h1 class="${(w => w >= 11 ? 'mc-h-l' : w >= 9 ? 'mc-h-m' : '')(Math.max(...data.title.split(/\s+/).map(w => w.length)))}">${esc(data.title)}</h1>
       ${data.about ? `<p>${esc(data.about)}</p>` : ''}${data.site ? `<a class="mc-site" href="${esc(data.site)}" target="_blank" rel="noopener">Сайт бренда<i aria-hidden="true">↗</i></a>` : ''}
       ${blist.length > 1 ? `<div class="mk-cols mc-brands" role="radiogroup" aria-label="Бренд">${['all'].concat(blist).map(b => `<button type="button" class="mk-col mc-br" role="radio" data-br="${esc(b)}">${b === 'all' ? 'Все бренды' : esc(b)}<small>${b === 'all' ? items.length : brands[b]}</small></button>`).join('')}</div>` : ''}

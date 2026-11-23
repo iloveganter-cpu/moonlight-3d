@@ -1347,7 +1347,7 @@ html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on
     root.classList.toggle('ml-star-light', !dark);
   }
   function target(el){
-    beam = !!(el && el.closest('.fl-box') && !el.closest('.ml-fl-ui'));            // в фонарике курсор = луч
+    beam = !!(el && el.closest('.fl-box') && !el.closest('.ml-fl-ui') && !el.closest('.ml-fl.lit'));  // в фонарике курсор = луч; свет включён — снова звезда
     const b = beam ? null : asButton(el);
     if (btn && btn !== b){ btn.style.translate = ''; }
     btn = b; link = !b && !!(el && el.closest(LINK));

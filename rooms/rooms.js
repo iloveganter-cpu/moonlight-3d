@@ -154,7 +154,7 @@ const mlStudio = (() => {
     D.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyS'){ e.preventDefault(); open(); } });
     let n = 0, t = 0;
     D.addEventListener('click', e => { if (!e.target.closest || !e.target.closest('.ml-bw .ml-logo')) return;
-      const now = Date.now(); n = now - t < 600 ? n + 1 : 1; t = now; if (n >= 5){ n = 0; open(); } });
+      const now = Date.now(); n = now - t < 800 ? n + 1 : 1; t = now; if (n >= 5){ n = 0; open(); } });
   }
   if (frame) addEventListener('storage', e => { if (e.key !== 'ml-studio-draft') return; let d = {}; try { d = JSON.parse(e.newValue || '{}'); } catch (x){}
     const prev = window.mlStudioCfg, next = Object.assign({}, head, d);

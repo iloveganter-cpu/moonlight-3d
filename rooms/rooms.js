@@ -89,9 +89,10 @@ const mlStudio = (() => {
     }), {rootMargin: '0px 0px -8% 0px', threshold: .08});
     const add = el => { if (el.classList.contains('mls-a') || el.closest('.mls-host')) return; el.classList.add('mls-a'); io.observe(el); };
     const scan = () => {
-      D.querySelectorAll('.t-rec').forEach(r => { if (r.matches(SKIP) || r.querySelector('.t-popup,.t-cover,#ml-flash') || r.offsetHeight < 20) return;
-        if (r.querySelector(CARDS)) { [...r.querySelectorAll(CARDS)].forEach(add); r.querySelectorAll('.t-section__topwrapper,.mk-hd,.ml-hd').forEach(add); }
-        else add(r); });
+      D.querySelectorAll('.t-rec').forEach(r => { if (r.matches(SKIP) || r.offsetHeight < 20) return;
+        // с карточками — анимируем карточки и заголовки (окна товаров внутри блока не трогаем)
+        if (r.querySelector(CARDS)) { [...r.querySelectorAll(CARDS)].filter(x => !x.closest('.t-popup')).forEach(add); r.querySelectorAll('.t-section__topwrapper,.mk-hd,.ml-hd,.ml-cat-hd').forEach(add); }
+        else if (!r.querySelector('.t-popup,.t-cover,#ml-flash,.ml-fl')) add(r); });
     };
     scan();
     mo = new MutationObserver(() => { clearTimeout(mo.t); mo.t = setTimeout(scan, 120); });

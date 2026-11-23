@@ -500,11 +500,16 @@ function extras(){
         fxRays.animate([{transform:'scale(1.7)', opacity:0, easing:IN}, {transform:'scale(.9)', opacity:.8, offset:.6, easing:IN}, {transform:'scale(.1)', opacity:0}], {...o, duration:1050});
       }
     }
-    sw.onclick = () => {
+    sw.onclick = e => {
       want = !want; sw.setAttribute('aria-pressed', want); sw.textContent = want ? 'Выключить' : 'Включить свет';
       if (RM){ sec.classList.toggle('lit', want); return; }
-      anim = {on:want, t0:performance.now()}; flashed = false;
-      if (!want){ sec.classList.remove('lit'); flash(false); }  // маска возвращается сразу, но закрывает всю комнату — шва нет
+      // точка вспышки — под курсором (на кнопке), иначе звезда рождается там, где гуляет луч, и выглядит как «улетевший курсор»;
+      // с клавиатуры (detail 0) — там, где луч
+      const b = fl.getBoundingClientRect(), mouse = e && e.detail > 0;
+      const px = mouse ? (e.clientX - b.left)/b.width : cx, py = mouse ? (e.clientY - b.top)/b.height : cy;
+      anim = {on:want, t0:performance.now(), x0:cx, y0:cy, x1:px, y1:py}; flashed = false;
+      tx = px; ty = py; user = true; idle = performance.now() + (want ? 1500 : 1150);  // после выключения луч сперва стоит у кнопки
+      if (!want){ cx = px; cy = py; sec.classList.remove('lit'); flash(false); }  // маска возвращается сразу, но закрывает всю комнату — шва нет
       requestAnimationFrame(loop);
     };
     new IntersectionObserver(([e]) => { vis = e.isIntersecting; if (vis) requestAnimationFrame(loop); }).observe(fl);
@@ -515,7 +520,8 @@ function extras(){
       if (anim){  // во время перехода луч стоит на месте
         const p = Math.min(1, (t - anim.t0) / (anim.on ? 1500 : 1150)), eo = x => 1 - Math.pow(1 - x, 3), R = floodR(b);
         if (anim.on){
-          if (p < .2) r = beamR(b) * (1 - eo(p/.2)) + 2;                       // луч → точка
+          if (p < .2){ const q = eo(p/.2); r = beamR(b) * (1 - q) + 2;          // луч подъезжает к курсору и сжимается в точку
+            cx = anim.x0 + (anim.x1 - anim.x0)*q; cy = anim.y0 + (anim.y1 - anim.y0)*q; }
           else { if (!flashed){ flashed = true; flash(true); }
             const q = eo((p - .2)/.8); r = 2 + (R - 2)*q; core = 70*q; }        // точка → свет на всю комнату
           if (p >= 1){ anim = null; sec.classList.add('lit'); }

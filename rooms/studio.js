@@ -198,7 +198,9 @@
     {n: 'Праздник', d: 'искры, звёзды, всё блестит', c: {anim: 'zoom', ease: 'spring', dur: .9, stagger: 90, headAnim: 'letters', imgReveal: 'zoom', btnHover: 'shine', hover: 'glow', sky: 1, glow: 2.2, curShape: 'star8', curTrail: 'sparks', curClick: 'stars', curHalo: 2, curSize: 1.15}},
   ];
   // все поля одним списком (поиск, «что изменено», подписи значений)
-  const ALL = [...Object.entries(F).flatMap(([tb, fs]) => fs.filter(f => f.k && f.type !== 'btn').map(f => Object.assign({tab: tb}, f))),
+  // у каждого поля запоминаем раздел (подзаголовок над ним): «Кнопки · Вид», а не просто «Вид»
+  const withSec = fs => { let sec = ''; return fs.map(f => { if (f.type === 'h') sec = f.t; return Object.assign({sec}, f); }); };
+  const ALL = [...Object.entries(F).flatMap(([tb, fs]) => withSec(fs).filter(f => f.k && f.type !== 'btn').map(f => Object.assign({tab: tb}, f))),
     ...TOD_ORDER.flatMap(m => TOD_COLORS[m].f.map(f => Object.assign({tab: 'color', type: 'color', grp: TOD_COLORS[m].name, tod: m}, f)))];
   const TABN = Object.fromEntries(T.map(t => [t.id, t.name]));
   // подпись значения по-человечески
@@ -493,7 +495,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const ch = changes();
     const bl = st.blocks && st.blocks[location.pathname] && ((st.blocks[location.pathname].order || []).length || (st.blocks[location.pathname].hidden || []).length);
     const row = f => { const v = get(f.k), col = f.type === 'color';
-      return `<div class="chg"><div class="n">${col ? `<i style="--c:${esc(v)}"></i>` : ''}${esc(f.t || 'Форма курсора')}<small>${esc(TABN[f.tab])}${f.grp ? ' · ' + esc(f.grp) : ''} → <b>${esc(col ? v : valName(f, v))}</b></small></div>
+      return `<div class="chg"><div class="n">${col ? `<i style="--c:${esc(v)}"></i>` : ''}${esc((f.sec && f.t ? f.sec + ' · ' : '') + (f.t || 'Форма курсора'))}<small>${esc(TABN[f.tab])}${f.grp ? ' · ' + esc(f.grp) : ''} → <b>${esc(col ? v : valName(f, v))}</b></small></div>
         <button data-goto="${f.k}" title="Открыть эту настройку">открыть</button>${f.k.startsWith('colors.') ? `<button data-cdef="${f.k}">вернуть</button>` : `<button data-reset="${f.k}">вернуть</button>`}</div>`; };
     return `<div class="note"><b>Как закрепить вид для всех посетителей:</b><br>1. Нажмите «Скопировать для HEAD».<br>2. Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код».<br>3. Выделите всё старое (Ctrl+A), вставьте (Ctrl+V), «Сохранить».<br>4. На странице проекта — «Опубликовать все страницы».</div>
       <div class="tl">Что вы поменяли (${ch.length})</div>
@@ -518,7 +520,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const q = query.toLowerCase(), hit = f => [f.t, f.h, f.grp, ...(f.o || []).map(o => o[1]), ...(f.type === 'tiles' ? SHAPE_N.map(x => x[1]) : []), TABN[f.tab]].some(x => x && String(x).toLowerCase().includes(q));
     const found = ALL.filter(hit); if (!found.length) return `<div class="note">Ничего не нашлось по «${esc(query)}». Попробуйте другое слово: «цвет», «кнопки», «звёзды», «шапка».</div>`;
     let last = '', out = '';
-    found.forEach(f => { const g = TABN[f.tab] + (f.grp ? ' · ' + f.grp : ''); if (g !== last){ out += `<div class="sgrp">${esc(g)}</div>`; last = g; }
+    found.forEach(f => { const g = TABN[f.tab] + (f.grp ? ' · ' + f.grp : '') + (f.sec ? ' · ' + f.sec : ''); if (g !== last){ out += `<div class="sgrp">${esc(g)}</div>`; last = g; }
       out += f.tod && f.tod !== curTod() ? `<div class="f"><div class="l">${esc(f.t)}</div><button class="big sec" data-ctod="${f.tod}" style="margin-top:0">Показать «${esc(f.grp)}» и настроить</button></div>` : field(Object.assign({}, f, {show: null, t: f.t || 'Форма курсора'})); });
     return out;
   }

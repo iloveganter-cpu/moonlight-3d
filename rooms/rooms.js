@@ -105,7 +105,8 @@ const mlStudio = (() => {
       const d = c.dist == null ? 40 : c.dist;
       const from = {fade: 'opacity:0', up: `opacity:0;transform:translateY(${d}px)`, down: `opacity:0;transform:translateY(-${d}px)`, left: `opacity:0;transform:translateX(-${d}px)`, right: `opacity:0;transform:translateX(${d}px)`,
         zoom: 'opacity:0;transform:scale(.92)', blur: 'opacity:0;filter:blur(14px)', flip: 'opacity:0;transform:perspective(900px) rotateX(18deg) translateY(20px);transform-origin:50% 0'}[a] || 'opacity:0';
-      s += `.mls-a{${from}}.mls-a.mls-in{opacity:1;transform:none;filter:none;transition:opacity ${c.dur || .8}s ${EASE[c.ease] || EASE.soft},transform ${c.dur || .8}s ${EASE[c.ease] || EASE.soft},filter ${c.dur || .8}s ${EASE[c.ease] || EASE.soft};transition-delay:var(--mls-d,0s)}.mls-a.mls-done{transition:none;transform:none!important}`;
+      // пока блок «за кадром» (сдвиг/разворот), он не должен давать горизонтальную прокрутку
+      s += `html,body{overflow-x:clip}.mls-a{${from}}.mls-a.mls-in{opacity:1;transform:none;filter:none;transition:opacity ${c.dur || .8}s ${EASE[c.ease] || EASE.soft},transform ${c.dur || .8}s ${EASE[c.ease] || EASE.soft},filter ${c.dur || .8}s ${EASE[c.ease] || EASE.soft};transition-delay:var(--mls-d,0s)}.mls-a.mls-done{transition:none;transform:none!important}`;
     }
     return s;
   }

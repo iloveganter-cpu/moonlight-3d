@@ -736,7 +736,7 @@ function extras(){
       let gal = []; try { gal = JSON.parse(p.gallery || '[]').map(g => g.img).filter(Boolean); } catch (e) {}
       const pr = num(p.price), po = num(p.priceold);
       const x = {id: String(p.uid), n: clean(p.title), b: brand(p), s: p.sku || '', p: pr, i: gal[0] || '', u: p.url || '', sp: specs(p),
-        pu: (p.partuids || []).map(String)};
+        pu: (Array.isArray(p.partuids) ? p.partuids : String(p.partuids || '').match(/\d+/g) || []).map(String)};
       if (gal.length > 1) x.g = gal.slice(1, 6);
       if (po > pr) x.po = po;
       const d = clean(p.descr); if (d) x.d = d.slice(0, 300);
@@ -758,7 +758,9 @@ function extras(){
         (j.products || []).forEach(p => items.push(item(p)));
         if (size < 500 || !j.nextslice || j.nextslice == slice) break; slice = j.nextslice;
       }
-      const parts = (first.parts || []).filter(p => !p.hideonpublic).map(p => ({uid: String(p.uid), t: p.title, h: p.alias || '', img: p.img || '',
+      const flat = [], walk = (ps, par) => (ps || []).forEach(p => { flat.push(Object.assign({}, p, {parentuid: p.parentuid || par || ''})); walk(p.subparts, p.uid); });
+      walk(first.parts);
+      const parts = flat.filter(p => !p.hideonpublic).map(p => ({uid: String(p.uid), t: p.title, h: p.alias || '', img: p.img || '',
         d: p.description || '', par: String(p.parentuid || ''), root: !!p.root, sort: +p.sort || 0}));
       return {info: first.partinfo || {}, crumbs: first.breadcrumbs || [], parts, total: first.total || items.length, items};
     }

@@ -6,7 +6,29 @@
   const D = document, root = D.documentElement;
   const BUNDLE = ([...D.scripts].find(s => /\/rooms\.js/.test(s.src)) || {}).src || 'https://iloveganter-cpu.github.io/moonlight-3d/rooms/rooms.js?v=3';
   const css0 = getComputedStyle(root);
-  const DEF_C = {graphite: '#2F3438', light: '#F4F5F6', night: '#25292D', nightDeep: '#1C1F23', moon: '#BCD0E6', moonDay: '#7895B5', moonDeep: '#5F7896'};
+  const DEF_C = {graphite: '#2F3438', light: '#F4F5F6', night: '#25292D', nightDeep: '#1C1F23', moon: '#BCD0E6', moonDay: '#7895B5', moonDeep: '#5F7896',
+    morningBg: '#EEF2F7', morningDark: '#2A3139', morningAccent: '#7895B5', eveningBg: '#F5EDE2', eveningDark: '#36322E', eveningAccent: '#7895B5'};
+  // цвета по времени суток: мастер выбирает время — сайт сразу переключается на него, и видны только его цвета
+  const TOD_ORDER = ['morning', 'day', 'evening', 'night'];
+  const TOD_COLORS = {
+    morning: {name: 'Утро', ic: '🌅', when: 'с 6:00 до 11:00', f: [
+      {k: 'colors.morningBg', t: 'Фон страницы', h: 'фон всего сайта и шапки'},
+      {k: 'colors.morningDark', t: 'Тёмные кнопки и плашки'},
+      {k: 'colors.morningAccent', t: 'Акцент', h: 'ссылки, рамки, звезда-курсор, свечение кнопок'}]},
+    day: {name: 'День', ic: '☀', when: 'с 11:00 до 17:00', f: [
+      {k: 'colors.light', t: 'Фон страницы', h: 'фон всего сайта и шапки'},
+      {k: 'colors.graphite', t: 'Текст и тёмные кнопки', h: 'основной цвет текста; он же утром и вечером'},
+      {k: 'colors.moonDay', t: 'Акцент', h: 'ссылки, рамки, звезда-курсор, свечение кнопок'},
+      {k: 'colors.moonDeep', t: 'Акцент мелкого текста', h: 'подписи и тонкие контуры'}]},
+    evening: {name: 'Вечер', ic: '🌇', when: 'с 17:00 до 22:00', f: [
+      {k: 'colors.eveningBg', t: 'Фон страницы', h: 'фон всего сайта и шапки'},
+      {k: 'colors.eveningDark', t: 'Тёмные кнопки и плашки'},
+      {k: 'colors.eveningAccent', t: 'Акцент', h: 'ссылки, рамки, звезда-курсор, свечение кнопок'}]},
+    night: {name: 'Ночь', ic: '☾', when: 'с 22:00 до 6:00', f: [
+      {k: 'colors.night', t: 'Фон страницы', h: 'фон всего сайта и шапки'},
+      {k: 'colors.nightDeep', t: 'Тёмные блоки', h: 'подвал, каталог, живые комнаты'},
+      {k: 'colors.moon', t: 'Лунный акцент', h: 'ссылки, рамки, звезда-курсор, свечение; и в тёмных местах днём (фонарик)'}]},
+  };
   // цвета «как в HEAD сейчас» — стартовая точка
   const headC = {}; Object.entries(S.COLORS).forEach(([k, v]) => { const x = (S.head.colors && S.head.colors[k]) || css0.getPropertyValue(v).trim(); headC[k] = /^#[0-9a-f]{3,8}$/i.test(x) ? x.toUpperCase() : DEF_C[k]; });
   let st = Object.assign({}, S.cfg); st.colors = Object.assign({}, headC, S.cfg.colors || {});
@@ -140,6 +162,13 @@ input[type=range]{width:100%;accent-color:#BCD0E6}
 .seg button:hover:not(.on){border-color:rgba(188,208,230,.6)}
 select{width:100%;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px;font:13px inherit}
 .col{display:flex;gap:8px;align-items:center}
+.todpick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px}
+.todpick button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 4px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#C9D0D8;font:600 12px/1 inherit}
+.todpick button span{font-size:17px;line-height:1}
+.todpick button i{display:flex;gap:2px}
+.todpick button s{width:10px;height:10px;border-radius:3px;background:var(--c);border:1px solid rgba(255,255,255,.25)}
+.todpick button.on{border-color:#BCD0E6;background:rgba(188,208,230,.16);color:#fff;box-shadow:0 0 0 1px #BCD0E6}
+.todpick button:hover:not(.on){border-color:rgba(188,208,230,.5)}
 .sw{width:46px;height:34px;flex:0 0 auto;border-radius:9px;border:1px solid rgba(255,255,255,.22);background:var(--c);padding:0;box-shadow:inset 0 0 0 2px rgba(0,0,0,.25)}
 .sw.on,.sw:hover{border-color:#BCD0E6;box-shadow:0 0 0 2px rgba(188,208,230,.35),inset 0 0 0 2px rgba(0,0,0,.25)}
 .pk{margin-top:10px;padding:10px;border-radius:12px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.08)}
@@ -293,13 +322,7 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
      После правки здесь: «Сохранить», потом «Опубликовать все страницы». -->
 <style>
 :root{
-${line('--mlc-graphite', c.graphite, 'основной тёмный: текст днём, тёмные блоки, кнопки')}
-${line('--mlc-light', c.light, 'фон сайта днём')}
-${line('--mlc-night', c.night, 'фон сайта ночью')}
-${line('--mlc-night-deep', c.nightDeep, 'тёмные блоки ночью (подвал, комнаты)')}
-${line('--mlc-moon', c.moon, 'лунный акцент на тёмном: ссылки, рамки, звезда, свечение')}
-${line('--mlc-moon-day', c.moonDay, 'акцент на светлом (утро и день)')}
-${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий текст и контуры на светлом')}
+${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLORS[m].f.map(f => line(S.COLORS[f.k.slice(7)], c[f.k.slice(7)], f.t.toLowerCase() + (f.h ? ': ' + f.h : ''))).join('\n')).join('\n')}
   --mlc-font: 'Avenir Next','Avenir','Nunito Sans',Arial,sans-serif; /* шрифт всего сайта */
 }
 </style>
@@ -319,11 +342,24 @@ ${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий �
       <button class="big sec" data-a="reset-all">Сбросить черновик — вернуть как на сайте</button>`;
   }
 
+  const curTod = () => TOD_COLORS[root.dataset.tod] ? root.dataset.tod : 'day';
+  function setTod(k){ const mb = D.querySelector('.ml-tod-menu button[data-m="' + k + '"]'); if (mb) mb.click(); else { S.ls.set('ml-tod', k); root.dataset.tod = k; }
+    const ifr = $('.phone iframe'); if (ifr && ifr.src) try { ifr.contentDocument.documentElement.dataset.tod = k; } catch (x){} }
+  function colorUI(){
+    const m = curTod(), M = TOD_COLORS[m];
+    return `<div class="tl" style="margin-top:4px">1. Какое время суток красим?</div>
+      <div class="todpick">${TOD_ORDER.map(k => { const t = TOD_COLORS[k]; return `<button data-ctod="${k}" class="${k === m ? 'on' : ''}"><span>${t.ic}</span><b>${t.name}</b><i>${t.f.map(f => `<s style="--c:${esc(get(f.k))}"></s>`).join('')}</i></button>`; }).join('')}</div>
+      <div class="tl">2. Цвета: ${M.name.toLowerCase()} <span style="color:#6E7780">· ${M.when}</span></div>
+      <div class="note" style="margin-top:4px">Сайт сейчас показан как <b>${M.name.toLowerCase()}</b>. Нажмите на квадратик цвета и ведите по палитре — видно сразу.</div>
+      ${M.f.map(field).join('')}
+      <button class="big sec" data-a="ctod-reset">Вернуть цвета «${M.name}» как были</button>`;
+  }
   function render(){
     nav.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === tab));
     if (tab === 'look') main.innerHTML = `<div class="note">Двигайте, нажимайте, пробуйте — сайт меняется сразу, но <b>только у вас</b>. Кнопка ↶ отменяет шаг, 🎲 — случайный вид. Когда понравится — вкладка «Готово».</div>
       ${reloadNeeded ? '<div class="note warn">Курсор или фонарик поменяются после перезагрузки страницы. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : ''}
       <div class="pr">${PRESETS.map((p, i) => `<button data-p="${i}">${p.n}<small>${p.d}</small></button>`).join('')}</div>`;
+    else if (tab === 'color') main.innerHTML = colorUI();
     else if (tab === 'blocks') main.innerHTML = blocksUI();
     else if (tab === 'done') main.innerHTML = doneUI();
     else main.innerHTML = (reloadNeeded && tab === 'fx' ? '<div class="note warn">Нужна перезагрузка, чтобы увидеть курсор/фонарик. <button class="x" data-a="reload" style="color:#FFB46B">Перезагрузить</button></div>' : '') + F[tab].map(field).join('');
@@ -346,6 +382,7 @@ ${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий �
   sh.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     const seg = b.closest('.seg'); if (seg){ set(seg.dataset.k, JSON.parse(b.dataset.v)); return; }
+    if (b.dataset.ctod){ setTod(b.dataset.ctod); openPk = null; pkHsv = null; sync(); return; }
     if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
     if (b.dataset.tone){ const k = b.closest('.pk').dataset.pk; pkHsv = {k, hsv: rgb2hsv(hex2rgb(b.dataset.tone))}; remember(k, b.dataset.tone); put(k, b.dataset.tone); return; }
     if (b.dataset.reset){ set(b.dataset.reset, ''); return; }
@@ -362,6 +399,7 @@ ${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий �
     if (a === 'phone') phone();
     if (a === '_replay') replay();
     if (a === 'reload') location.reload();
+    if (a === 'ctod-reset'){ push(); TOD_COLORS[curTod()].f.forEach(f => { const k = f.k.slice(7); st.colors[k] = headC[k]; }); openPk = null; pkHsv = null; save(); S.apply(st); sync(); toast('Цвета вернулись'); }
     if (a === 'blocks-reset'){ push(); if (st.blocks) delete st.blocks[location.pathname]; save(); S.apply(st); render(); }
     if (a === 'copy'){ const txt = exportCode(); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Скопировано — вставьте в HEAD Тильды'), () => { const t = main.querySelector('textarea'); t.select(); D.execCommand('copy'); toast('Скопировано'); }); }
     if (a === 'reset-all'){ push(); st = Object.assign({}, S.head); st.colors = Object.assign({}, headC); save(); S.apply(st); render(); toast('Как на сайте'); }
@@ -388,9 +426,10 @@ ${line('--mlc-moon-deep', c.moonDeep, 'тёмный акцент: мелкий �
   const TODS = [['morning', 'Утро'], ['day', 'День'], ['evening', 'Вечер'], ['night', 'Ночь']];
   const tod = $('.tod'); tod.innerHTML = TODS.map(([k, n]) => `<button data-tod="${k}">${n}</button>`).join('');
   const todSync = () => tod.querySelectorAll('button').forEach(b => b.classList.toggle('on', root.dataset.tod === b.dataset.tod));
-  tod.onclick = e => { const b = e.target.closest('button'); if (!b) return; S.ls.set('ml-tod', b.dataset.tod); root.dataset.tod = b.dataset.tod; todSync();
+  tod.onclick = e => { const b = e.target.closest('button'); if (!b) return; setTod(b.dataset.tod); todSync();
     const ifr = $('.phone iframe'); if (ifr && ifr.src) try { ifr.contentDocument.documentElement.dataset.tod = b.dataset.tod; } catch (x){} };
-  new MutationObserver(todSync).observe(root, {attributes: true, attributeFilter: ['data-tod']}); todSync();
+  let lastTod = root.dataset.tod;
+  new MutationObserver(() => { todSync(); if (root.dataset.tod === lastTod) return; lastTod = root.dataset.tod; if (tab === 'color' && !gesture){ openPk = null; pkHsv = null; sync(); } }).observe(root, {attributes: true, attributeFilter: ['data-tod']}); todSync();
   if (S.ls.get('ml-studio-min') === '1') P.classList.add('min');
   D.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA/.test((e.composedPath()[0] || {}).tagName || '')){ const h = hist.pop(); if (h){ e.preventDefault(); st = JSON.parse(h); save(); S.apply(st); render(); toast('Отменено'); } } });
   render();

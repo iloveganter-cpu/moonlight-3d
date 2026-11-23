@@ -550,9 +550,11 @@ function extras(){
   // ---------- шапка: живой логотип вместо PNG (ярче, лунное сияние, подсвечивается курсором)
   // PNG лежит внутри контейнера, который ночью инвертируется, поэтому наш логотип — сосед этого контейнера
   // в .t3113__firstlevel и встаёт ровно на место картинки.
+  (function hLogo(n){
   const hImg = D.querySelector('.t3113__header img.t-menu-base__imglogo');
   const hLvl = hImg && hImg.closest('.t3113__firstlevel');
-  if (hImg && hLvl && !hLvl.querySelector('.ml-hlogo')){
+  if (!hImg || !hLvl){ if (n < 60) setTimeout(() => hLogo(n + 1), 250); return; }
+  if (!hLvl.querySelector('.ml-hlogo')){
     const a = hImg.closest('a');
     const hl = D.createElement('a'); hl.className = 'ml-hlogo'; hl.href = (a && a.getAttribute('href')) || '/'; hl.setAttribute('aria-label', 'Moonlight — на главную');
     hl.innerHTML = '<i class="ml-hlogo-w"></i><span class="ml-hlogo-s">профессиональное освещение</span>';
@@ -567,6 +569,7 @@ function extras(){
     D.addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return;
       hLit.forEach(el => { const b = el.getBoundingClientRect(); el.style.setProperty('--bx', (e.clientX - b.left) + 'px'); el.style.setProperty('--by', (e.clientY - b.top) + 'px'); }); }, {passive:true});
   }
+  })(0);
   // ---------- общие карточка товара, корзина и окно товара (страницы категорий и каталог на главной)
   const ML_WA = '996998899675';
   const mlEsc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);

@@ -1843,10 +1843,11 @@ function extras(){
     // нижний край видимой фиксированной шапки (ПК или мобильной)
     const hdrBottom = () => { let b = 0; D.querySelectorAll('.t3113__header, .t3113__firstlevel, .tmenu-mobile').forEach(h => {
       const r = h.getBoundingClientRect(); if (r.height && getComputedStyle(h).display !== 'none' && r.top <= 1) b = Math.max(b, r.bottom); }); return b; };
-    const pad = () => { const over = hdrBottom() - rec.getBoundingClientRect().top;
+    // шапка фиксированная → сравниваем с верхом блока в координатах документа (не зависит от прокрутки)
+    const pad = () => { const over = hdrBottom() - (rec.getBoundingClientRect().top + scrollY);
       host.style.paddingTop = Math.round(Math.max(0, over) + (innerWidth <= 640 ? 28 : 40)) + 'px'; };
-    if (scrollY < 5){ pad(); setTimeout(pad, 800); }
-    addEventListener('resize', () => { if (scrollY < 5) pad(); });
+    pad(); setTimeout(pad, 800); setTimeout(pad, 2500);
+    addEventListener('resize', pad);
 
     // --- появление при прокрутке
     const items = host.querySelectorAll('.mw-a');

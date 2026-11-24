@@ -179,7 +179,56 @@
       {k: 'marquee', t: 'Бегущая строка брендов', type: 'range', min: 10, max: 120, step: 2, u: 'с', h: 'время одного круга: меньше — быстрее'},
     ],
   };
-  const MOTION_KEYS = ['anim', 'dur', 'stagger', 'dist', 'ease', 'headAnim', 'imgReveal'];
+  // ---------- готовые палитры (24.11): задаём 6 ключевых цветов, остальное выводим —
+  // утро чуть холоднее, вечер теплее, акцент мелкого текста темнее; контраст подтягивается сам, чтобы всё читалось
+  const PAL_GROUPS = [
+    ['Холодные', [
+      ['Лунная', 'фирменная Moonlight', null],
+      ['Сапфир', 'глубокий синий', ['#F3F5FA', '#232A3B', '#1D2333', '#151A27', '#A9C2FF', '#3F63C4']],
+      ['Индиго', 'синий с фиолетом', ['#F2F3F8', '#1E2140', '#1A1C36', '#121328', '#B4B8FF', '#4B50C8']],
+      ['Морская волна', 'петроль и бирюза', ['#F1F5F6', '#1F2D33', '#1A262B', '#121B1F', '#8FC8D8', '#2C7A8F']],
+      ['Северное сияние', 'мятная бирюза', ['#F2F6F6', '#23302F', '#1E2A2A', '#162020', '#9FE3D6', '#2F8F83']],
+      ['Лаванда', 'мягкий сиреневый', ['#F6F4F8', '#2E2A36', '#27232F', '#1D1A24', '#CDB8F0', '#7A5BB0']]]],
+    ['Тёплые', [
+      ['Янтарь', 'прежний фирменный', ['#F6F3EE', '#2F3438', '#25292D', '#1C1F23', '#EFAC3E', '#B97A16']],
+      ['Шампань', 'светлое золото', ['#F7F4EC', '#2F2B24', '#26231D', '#1C1A15', '#E6CF94', '#9C7A2E']],
+      ['Медь', 'тёплый металл', ['#F6F1EC', '#33291F', '#2B2622', '#211C19', '#E9B98A', '#B07A4A']],
+      ['Терракота', 'обожжённая глина', ['#F7F2EE', '#3A2C27', '#2E2420', '#221A17', '#F0A58A', '#B4593B']],
+      ['Пыльная роза', 'нежный розовый', ['#F8F3F3', '#3A2B2E', '#2E2326', '#22191C', '#F2B8C6', '#B05A73']],
+      ['Бордо', 'винный, торжественный', ['#F6F1F1', '#301E22', '#2A1A1E', '#1E1215', '#E89AA8', '#9E2F45']]]],
+    ['Природные', [
+      ['Шалфей', 'приглушённая зелень', ['#F3F5F0', '#2C3328', '#252B22', '#1B2018', '#C3D9A8', '#5E7F3E']],
+      ['Изумруд', 'сочный зелёный', ['#F1F6F3', '#1F2E27', '#1A2721', '#121C17', '#8EDDB4', '#23845A']],
+      ['Олива', 'тёплая хаки', ['#F5F4EC', '#33321F', '#2A291C', '#1F1E14', '#D6D08A', '#7A7330']],
+      ['Песок', 'бежевый, лён', ['#F5F0E8', '#3B342B', '#2D2822', '#221E19', '#E2CBA7', '#8F6F45']],
+      ['Камень', 'тёплый серый', ['#F4F3F1', '#34312E', '#2A2826', '#1F1D1C', '#D6CFC6', '#7D7368']]]],
+    ['Смелые', [
+      ['Монохром', 'чёрное и белое', ['#F5F5F5', '#222222', '#1E1E1E', '#141414', '#E6E6E6', '#5E5E5E']],
+      ['Неон', 'электрик на чёрном', ['#F4F4F6', '#16161A', '#121216', '#0B0B0E', '#7DF9FF', '#0077B6']],
+      ['Коралл', 'яркий и тёплый', ['#FAF4F1', '#2C2A2A', '#232121', '#191717', '#FF9E80', '#D4532F']],
+      ['Фуксия', 'дерзкий розовый', ['#F8F3F6', '#2D2229', '#251C22', '#1A1318', '#FF9AD5', '#C2287E']],
+      ['Лайм', 'свежий жёлто-зелёный', ['#F4F6EE', '#24281C', '#1E2217', '#151810', '#D4F27A', '#5E8A12']]]]];
+  const lin = v => { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); };
+  const lum = h => { const [r, g, b] = hex2rgb(h); return .2126 * lin(r) + .7152 * lin(g) + .0722 * lin(b); };
+  const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+  const mixHex = (a, b, t) => { const A = hex2rgb(a), B = hex2rgb(b); return rgb2hex(A.map((v, i) => v + (B[i] - v) * t)); };
+  // двигаем цвет к to (чёрному/белому) маленькими шагами, пока не наберёт контраст с фоном
+  const fit = (c, bg, need, to) => { let x = c; for (let i = 0; i < 40 && contrast(x, bg) < need; i++) x = mixHex(x, to, .06); return x; };
+  function palette(k){
+    if (!k) return Object.assign({}, DEF_C);
+    let [light, graphite, night, nightDeep, moon, moonDay] = k;
+    graphite = fit(graphite, light, 9, '#000000');
+    moonDay = fit(moonDay, light, 3.2, '#000000');
+    const moonDeep = fit(mixHex(moonDay, graphite, .2), light, 4.8, '#000000');
+    moon = fit(moon, night, 7, '#FFFFFF');
+    const morningBg = mixHex(light, '#DCE6F5', .35), eveningBg = mixHex(light, '#F3DCC2', .45);
+    return {light, graphite, night, nightDeep, moon, moonDay, moonDeep,
+      morningBg, morningDark: mixHex(graphite, '#1C2A3A', .25), morningAccent: fit(moonDay, morningBg, 3.2, '#000000'),
+      eveningBg, eveningDark: mixHex(graphite, '#3A2A1C', .25), eveningAccent: fit(moonDay, eveningBg, 3.2, '#000000')};
+  }
+  const PALS = PAL_GROUPS.flatMap(([g, ps]) => ps.map(([n, d, k]) => ({g, n, d, c: palette(k)})));
+  const palOn = p => Object.keys(p.c).every(k => String(st.colors[k] || '').toUpperCase() === p.c[k].toUpperCase());
+  const MOTION_KEYS =['anim', 'dur', 'stagger', 'dist', 'ease', 'headAnim', 'imgReveal'];
   const PRESETS = [
     {n: 'Базовый', d: 'фирменный вид Moonlight: лунный акцент, звезда, фонарик', base: true, c: {}},
     {n: 'Как сейчас', d: 'всё как на сайте сейчас', c: {}},
@@ -302,6 +351,13 @@ input[type=range]{width:100%;accent-color:#BCD0E6}
 .seg button:hover:not(.on){border-color:rgba(188,208,230,.6)}
 select{width:100%;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px;font:13px inherit}
 .col{display:flex;gap:8px;align-items:center}
+.pals{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 4px}
+.pals .pgh{grid-column:1/-1;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8E97A1;margin:6px 0 0}
+.pals button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 7px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#EEF1F4;font:600 12px/1.15 inherit;text-align:left}
+.pals button i{display:block;width:100%;height:18px;border-radius:7px;border:1px solid rgba(255,255,255,.18);margin-bottom:3px}
+.pals button small{font-weight:400;font-size:10.5px;color:#8E97A1;line-height:1.2}
+.pals button.on{border-color:#BCD0E6;box-shadow:0 0 0 1px #BCD0E6;background:rgba(188,208,230,.12)}
+.pals button:hover:not(.on){border-color:rgba(188,208,230,.5)}
 .todpick{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px}
 .todpick button{display:flex;flex-direction:column;align-items:center;gap:4px;padding:9px 4px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#C9D0D8;font:600 12px/1 inherit}
 .todpick button span{font-size:17px;line-height:1}
@@ -488,7 +544,13 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const ifr = $('.phone iframe'); if (ifr && ifr.src) try { ifr.contentDocument.documentElement.dataset.tod = k; } catch (x){} }
   function colorUI(){
     const m = curTod(), M = TOD_COLORS[m];
-    return `<div class="tl" style="margin-top:4px">1. Какое время суток красим?</div>
+    let g0 = '';
+    const pals = PALS.map((p, i) => { const h = p.g !== g0 ? `<div class="pgh">${p.g}</div>` : ''; g0 = p.g; const c = p.c;
+      return h + `<button data-pal="${i}" class="${palOn(p) ? 'on' : ''}" title="${esc(p.d)}"><i style="background:linear-gradient(90deg,${c.light} 0 25%,${c.moonDay} 25% 50%,${c.night} 50% 75%,${c.moon} 75%)"></i><b>${p.n}</b><small>${p.d}</small></button>`; }).join('');
+    return `<div class="tl" style="margin-top:4px">Готовые палитры</div>
+      <div class="note" style="margin-top:4px">Одним нажатием красит весь сайт — утро, день, вечер и ночь, корзину, поиск, каталог, карточки, курсор. Форму, шрифты и эффекты не трогает. Потом любой цвет можно подправить ниже.</div>
+      <div class="pals">${pals}</div>
+      <div class="tl">1. Какое время суток красим?</div>
       <div class="todpick">${TOD_ORDER.map(k => { const t = TOD_COLORS[k]; return `<button data-ctod="${k}" class="${k === m ? 'on' : ''}"><span>${t.ic}</span><b>${t.name}</b><i>${t.f.map(f => `<s style="--c:${esc(get(f.k))}"></s>`).join('')}</i></button>`; }).join('')}</div>
       <div class="tl">2. Цвета: ${M.name.toLowerCase()} <span style="color:#6E7780">· ${M.when}</span></div>
       <div class="note" style="margin-top:4px">Сайт сейчас показан как <b>${M.name.toLowerCase()}</b>. Нажмите на квадратик цвета и ведите по палитре — видно сразу.</div>
@@ -590,6 +652,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       const o = el.style.outline; el.style.outline = '2px solid #BCD0E6'; el.style.outlineOffset = '4px'; setTimeout(() => { el.style.outline = o; }, 1600); return; }
     if (b.dataset.sva != null){ const x = saves()[+b.dataset.sva]; if (!x) return; push(); const keepT = st.texts; st = JSON.parse(JSON.stringify(x.st)); st.texts = keepT; st.colors = Object.assign({}, headC, st.colors || {}); save(); S.apply(live()); sync(); replay(); toast('Вариант «' + x.n + '»'); return; }
     if (b.dataset.svd != null){ const a = saves(); a.splice(+b.dataset.svd, 1); savesPut(a); sync(); return; }
+    if (b.dataset.pal != null){ const p = PALS[+b.dataset.pal]; push(); st.colors = Object.assign({}, st.colors, p.c); openPk = null; pkHsv = null; save(); S.apply(live()); sync(); toast('Палитра «' + p.n + '» — загляните в ночь и корзину'); return; }
     if (b.dataset.ctod){ setTod(b.dataset.ctod); openPk = null; pkHsv = null; sync(); return; }
     if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
     if (b.dataset.tone){ const k = b.closest('.pk').dataset.pk; pkHsv = {k, hsv: rgb2hsv(hex2rgb(b.dataset.tone))}; remember(k, b.dataset.tone); put(k, b.dataset.tone); return; }

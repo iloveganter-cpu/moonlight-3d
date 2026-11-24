@@ -259,7 +259,12 @@
     const px = []; const d = cx.getImageData(0, 0, cv.width, cv.height).data;
     for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) px.push([d[i], d[i + 1], d[i + 2]]);
     if (!px.length) return [];
-    let C = Array.from({length: 8}, (_, i) => px[Math.floor((i + .5) * px.length / 8)].slice());
+    // стартовые точки «самый непохожий цвет» — иначе мелкие яркие пятна сливаются с фоном в грязный цвет
+    const dist = (c, p) => (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2;
+    const mean = [0, 1, 2].map(i => px.reduce((s, p) => s + p[i], 0) / px.length);
+    let C = [px.reduce((b, p) => dist(mean, p) < dist(mean, b) ? p : b, px[0]).slice()];
+    const md = px.map(p => dist(C[0], p));
+    while (C.length < 8){ let bi = 0; md.forEach((d, i) => { if (d > md[bi]) bi = i; }); if (md[bi] < 120) break; C.push(px[bi].slice()); px.forEach((p, i) => { const d = dist(px[bi], p); if (d < md[i]) md[i] = d; }); }
     for (let it = 0; it < 10; it++){
       const sum = C.map(() => [0, 0, 0, 0]);
       px.forEach(p => { let bi = 0, bd = 1e9; C.forEach((c, i) => { const dd = (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2; if (dd < bd){ bd = dd; bi = i; } }); const s = sum[bi]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++; });

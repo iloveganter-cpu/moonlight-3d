@@ -839,10 +839,15 @@ function extras(){
       anim = {on:want, t0:performance.now(), x0:cx, y0:cy, x1:px, y1:py}; flashed = false;
       tx = px; ty = py; user = true; idle = performance.now() + (want ? 1500 : 1150);  // после выключения луч сперва стоит у кнопки
       if (!want){ cx = px; cy = py; sec.classList.remove('lit'); flash(false); }  // маска возвращается сразу, но закрывает всю комнату — шва нет
-      requestAnimationFrame(loop);
+      kick();
     };
-    new IntersectionObserver(([e]) => { vis = e.isIntersecting; if (vis) requestAnimationFrame(loop); }).observe(fl);
+    // один цикл на всё: раньше каждый клик выключателя запускал ещё одну цепочку кадров, и они копились
+    let raf = 0, last = '';
+    const kick = () => { if (!raf && vis) raf = requestAnimationFrame(loop); };
+    new IntersectionObserver(([e]) => { vis = e.isIntersecting; kick(); }).observe(fl);
+    fl.addEventListener('pointermove', kick, {passive:true});
     function loop(t){
+      raf = 0;
       if (!vis) return;
       const b = fl.getBoundingClientRect();
       let r = beamR(b), core = 0;
@@ -863,9 +868,14 @@ function extras(){
         if (!user || t - idle > 2600){ user = false; const s = t/1000; tx = .5 + .28*Math.sin(s*.55); ty = .42 + .16*Math.sin(s*.9 + 1); }
         cx = lerp(cx, tx, RM ? 1 : .09); cy = lerp(cy, ty, RM ? 1 : .09);
       } else { cx = tx; cy = ty; }  // свет горит: точка вспышки при выключении — там, где курсор
-      on.style.setProperty('--fx', (cx*100) + '%'); on.style.setProperty('--fy', (cy*100) + '%');
-      on.style.setProperty('--fr', Math.round(r) + 'px'); on.style.setProperty('--fc', core.toFixed(1) + '%');
-      requestAnimationFrame(loop);
+      const lit = !anim && sec.classList.contains('lit');
+      // свет горит и анимации нет — маска не видна, кадры не нужны (снова запустит клик/движение)
+      if (lit) return;
+      const key = (cx*100).toFixed(2) + '|' + (cy*100).toFixed(2) + '|' + Math.round(r) + '|' + core.toFixed(1);
+      if (key !== last){ last = key;   // пишем только изменения: каждая запись = перерисовка маски на весь экран
+        on.style.setProperty('--fx', (cx*100).toFixed(2) + '%'); on.style.setProperty('--fy', (cy*100).toFixed(2) + '%');
+        on.style.setProperty('--fr', Math.round(r) + 'px'); on.style.setProperty('--fc', core.toFixed(1) + '%'); }
+      raf = requestAnimationFrame(loop);
     }
   }
 
@@ -2338,7 +2348,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     beam = !!(el && el.closest('.fl-box') && !el.closest('.ml-fl-ui') && !el.closest('.ml-fl.lit'));  // в фонарике курсор = луч; свет включён — снова звезда
     inPanel = !!(el && el.closest && el.closest('.mls-host'));   // над панелью Студии — обычная стрелка
     const b = beam || opt.off || inPanel ? null : asButton(el);
-    if (btn && btn !== b){ btn.style.translate = ''; }
+    if (btn && btn !== b){ btn.style.translate = ''; btn._mlT = ''; }
     btn = b; link = !b && !!(el && el.closest(LINK));
     const hug = btn && (opt.btn === 'ring' || opt.btn === 'fill');
     star.classList.toggle('off', inPanel || beam || (btn && opt.btn === 'ring'));
@@ -2360,7 +2370,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
   D.addEventListener('mouseenter', () => { if (seen) root.classList.add('ml-star-in'); });
   D.addEventListener('mls-apply', () => { readOpts(); if (seen){ probe(); target(D.elementFromPoint(mx, my)); } });
 
-  const dots = [], trail = []; let dotsDirty = false, ang = 0, sc = 1, lastDot = 0, rx = 0, ry = 0, rw = 10, rh = 10, rr = 20;
+  const dots = [], trail = []; let lastT = '', dotsDirty = false, ang = 0, sc = 1, lastDot = 0, rx = 0, ry = 0, rw = 10, rh = 10, rr = 20;
   const K = RM ? 1 : 0;
   // маленькая 4-лучевая звезда на холсте (искры)
   function spark(x, y, r, a){ ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath();
@@ -2384,7 +2394,8 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
       else ang += vx * .6 + (tgt ? (45 - ((ang % 90) + 90) % 90) * .12 : 0); }
     const grow = (link && opt.link ? 1.6 : 1) * (btn && opt.btn === 'magnet' ? 1.5 : 1) * (btn && opt.btn === 'none' ? 1.3 : 1);
     sc = lerp(sc, grow, K || .15);
-    star.style.transform = `translate3d(${sx}px,${sy}px,0) rotate(${ang}deg) scale(${sc})`;
+    const stT = `translate3d(${sx.toFixed(1)}px,${sy.toFixed(1)}px,0) rotate(${ang.toFixed(1)}deg) scale(${sc.toFixed(3)})`;
+    if (stT !== lastT){ star.style.transform = stT; lastT = stT; }   // мышь стоит — стиль не трогаем (иначе пересчёт каждый кадр)
     // кнопку под курсором убрали из страницы (перерисовка) — берём то, что теперь под курсором
     if (btn && !btn.isConnected){ btn = null; target(D.elementFromPoint(mx, my)); }
     // над кнопкой: кнопка тянется к курсору; кольцо обнимает её или под курсором — полупрозрачный круг
@@ -2394,7 +2405,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
       const still = RM || btn.closest('.ml-chips');   // в листаемой строке фильтров кнопки не тянем — иначе наезжают друг на друга
       const k = opt.pull * (opt.btn === 'magnet' ? 1.6 : 1);
       const ox = still ? 0 : (mx - cx) * .18 * k, oy = still ? 0 : (my - cy) * .25 * k;
-      btn.style.translate = `${ox.toFixed(1)}px ${oy.toFixed(1)}px`;
+      const bT = `${ox.toFixed(1)}px ${oy.toFixed(1)}px`; if (btn._mlT !== bT){ btn.style.translate = bT; btn._mlT = bT; }
       const blink = t - clickAt < 160, rs_ = ring.style;
       if (opt.btn === 'ring'){
         rx = lerp(rx, cx + ox*.5, K || .25); ry = lerp(ry, cy + oy*.5, K || .25);

@@ -764,7 +764,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const row = f => { const v = get(f.k), col = f.type === 'color';
       return `<div class="chg"><div class="n">${col ? `<i style="--c:${esc(v)}"></i>` : ''}${esc((f.sec && f.t ? f.sec + ' · ' : '') + (f.t || 'Форма курсора'))}<small>${esc(TABN[f.tab])}${f.grp ? ' · ' + esc(f.grp) : ''} → <b>${esc(col ? v : valName(f, v))}</b></small></div>
         <button data-goto="${f.k}" title="Открыть эту настройку">открыть</button>${f.k.startsWith('colors.') ? `<button data-cdef="${f.k}">вернуть</button>` : `<button data-reset="${f.k}">вернуть</button>`}</div>`; };
-    return `<div class="note"><b>Как закрепить вид для всех посетителей:</b><br>1. Нажмите «Скопировать для HEAD».<br>2. Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код».<br>3. Выделите всё старое (Ctrl+A), вставьте (Ctrl+V), «Сохранить».<br>4. На странице проекта — «Опубликовать все страницы».</div>
+    return `<div class="note"><b>Закончили? Отправьте свой вариант владельцу сайта:</b><br>1. Нажмите «Проверить сайт» и подождите минуту.<br>2. Пролистайте вниз и нажмите «Скопировать для HEAD».<br>3. Откройте чат с владельцем, нажмите Ctrl+V и отправьте.<br>В Тильду самим ничего вставлять не нужно.<details style="margin-top:8px;opacity:.75"><summary style="cursor:pointer">Для владельца сайта</summary>Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код» → выделить всё старое (Ctrl+A), вставить присланное (Ctrl+V) → «Сохранить» → «Опубликовать все страницы».</details></div>
       <div class="tl">Проверка перед экспортом</div>
       ${auditUI()}
       <div class="tl">Что вы поменяли (${ch.length})</div>
@@ -895,7 +895,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (a === 'reload') location.reload();
     if (a === 'ctod-reset'){ push(); TOD_COLORS[curTod()].f.forEach(f => { const k = f.k.slice(7); st.colors[k] = headC[k]; }); openPk = null; pkHsv = null; save(); S.apply(live()); sync(); toast('Цвета вернулись'); }
     if (a === 'blocks-reset'){ push(); if (st.blocks) delete st.blocks[location.pathname]; save(); S.apply(live()); render(); }
-    if (a === 'copy'){ const txt = exportCode(); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Скопировано — вставьте в HEAD Тильды'), () => { const t = main.querySelector('textarea'); t.select(); D.execCommand('copy'); toast('Скопировано'); }); }
+    if (a === 'copy'){ const txt = exportCode(); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Скопировано — вставьте в чат владельцу (Ctrl+V) и отправьте'), () => { const t = main.querySelector('textarea'); t.select(); D.execCommand('copy'); toast('Скопировано'); }); }
     if (a === 'reset-all'){ push(); st = Object.assign({}, S.head); st.colors = Object.assign({}, headC); save(); S.apply(live()); render(); toast('Как на сайте'); }
     if (a === 'exit'){ S.ls.set('ml-studio-on', null); const u = new URL(location.href); u.searchParams.delete('studio'); location.href = u.toString(); }
   });

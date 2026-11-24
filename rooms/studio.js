@@ -411,7 +411,6 @@ footer .tod button.on{background:rgba(188,208,230,.18);color:#fff;border-color:r
     <button class="ib" data-a="undo" title="Отменить последнее (Ctrl+Z)">↶</button>
     <button class="ib" data-a="cmp" title="Удерживайте — покажу, как на сайте сейчас">◑</button>
     <button class="ib" data-a="pick" title="Что это? Нажмите, потом кликните по любому месту сайта — открою его настройки">🎯</button>
-    <button class="ib" data-a="dice" title="Случайный вид">🎲</button>
     <button class="ib" data-a="phone" title="Показать на телефоне">📱</button>
     <button class="ib" data-a="help" title="Как пользоваться">?</button>
     <button class="ib" data-a="min" title="Свернуть">—</button></header>
@@ -579,7 +578,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     <li><span class="k">🎯</span> нажмите и кликните по любому месту сайта — откроется его настройка.</li>
     <li><span class="k">◑</span> удерживайте — покажу, как сайт выглядит сейчас у всех. Отпустите — снова ваш вариант.</li>
     <li><span class="k">✎</span> вкладка «Тексты» — надписи комнат, фонарика, каталога можно поправить прямо на сайте.</li>
-    <li><span class="k">↶</span> отмена шага, <span class="k">🎲</span> случайный вид, <span class="k">📱</span> как на телефоне. Оранжевая точка на вкладке — там что-то изменено.</li>
+    <li><span class="k">↶</span> отмена шага, <span class="k">📱</span> как на телефоне. Оранжевая точка на вкладке — там что-то изменено.</li>
     <li>Понравилось — сохраните вариант (внизу) или вкладка <b>«Готово»</b>: код для Тильды.</li></ol>
     <button class="x" data-a="help-off">понятно, скрыть</button></div>`;
   let query = '';
@@ -675,7 +674,6 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (a === 'min'){ P.classList.add('min'); S.ls.set('ml-studio-min', '1'); }
     if (a === 'max'){ P.classList.remove('min'); S.ls.set('ml-studio-min', null); }
     if (a === 'undo'){ const h = hist.pop(); if (!h) return toast('Отменять нечего'); st = JSON.parse(h); save(); S.apply(live()); render(); toast('Отменено'); }
-    if (a === 'dice') dice();
     if (a === 'phone') phone();
     if (a === '_replay') replay();
     if (a === 'reload') location.reload();
@@ -686,24 +684,6 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     if (a === 'exit'){ S.ls.set('ml-studio-on', null); const u = new URL(location.href); u.searchParams.delete('studio'); location.href = u.toString(); }
   });
   function replay(){ if (S.replay) S.replay(); }
-  const pick = a => a[Math.floor(Math.random() * a.length)], rnd = (a, b, s) => Math.round((a + Math.random() * (b - a)) / s) * s;
-  function dice(){ push();
-    const hue = Math.floor(Math.random() * 360), sat = 30 + Math.random() * 50;
-    const hsl = (h, s, l) => { s /= 100; l /= 100; const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
-      return '#' + [f(0), f(8), f(4)].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('').toUpperCase(); };
-    st = Object.assign({}, {cursor: st.cursor, flash: st.flash, blocks: st.blocks, texts: st.texts}, {
-      colors: Object.assign({}, headC, Math.random() < .7 ? {moon: hsl(hue, sat, 78), moonDay: hsl(hue, sat * .8, 55), moonDeep: hsl(hue, sat * .7, 40)} : {}),
-      font: pick(['', ...S.FONTS.slice(0, 11)]), headFont: pick(['', ...S.FONTS]), headCase: pick(['upper', 'none']), headWeight: pick([300, 400, 600, 700]), headSize: pick(['m', 'l', 'xl']),
-      headSpacing: rnd(-.01, .22, .01), radiusCard: rnd(0, 32, 2), radiusBtn: rnd(0, 40, 2), btnStyle: pick(['', 'outline', 'glass', 'moon']), shadow: rnd(0, 1.6, .1),
-      anim: pick(['fade', 'up', 'zoom', 'blur', 'flip', 'left']), dur: rnd(.5, 1.5, .05), stagger: rnd(40, 180, 10), ease: pick(['', 'spring', 'slow']), hover: pick(['lift', 'glow', 'zoom', 'tilt']),
-      spacing: rnd(.8, 1.4, .05), grain: Math.random() < .3 ? rnd(.1, .5, .05) : undefined,
-      headAnim: pick(['', 'words', 'letters', 'mask', 'line', 'light']), imgReveal: pick(['', 'curtain', 'side', 'zoom', 'fade']), btnHover: pick(['', 'shine', 'fill', 'lift', 'pulse']), linkHover: pick(['', 'underline', 'glow']),
-      sky: Math.random() < .35 ? rnd(.3, 1, .05) : undefined,
-      curShape: pick(SHAPE_N.map(x => x[0])), curTrail: pick(['', 'sparks', 'comet', 'light', 'none']), curBtn: pick(['', 'fill', 'magnet']), curClick: pick(['', 'ripple', 'stars']), curLag: pick([0, 0, .2, .4]), curSpin: pick(['', 'still', 'spin'])});
-    if (st.curShape === 'star') delete st.curShape;
-    Object.keys(st).forEach(k => (st[k] === undefined || st[k] === '') && delete st[k]);
-    save(); S.apply(live()); render(); replay(); toast('🎲 Новый вид');
-  }
   function phone(){ const ph = $('.phone'), on = ph.classList.toggle('on');
     if (on){ const u = new URL(location.href); u.searchParams.delete('studio'); u.searchParams.set('studio-frame', '1'); ph.querySelector('iframe').src = u.toString(); } }
   // ---------- ТЕКСТЫ наших блоков (метки data-mlt на сайте)

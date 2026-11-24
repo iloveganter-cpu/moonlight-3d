@@ -657,7 +657,8 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   // ищем текст, который плохо читается (контраст < 3), и остатки фирменных голубых, если выбрана другая палитра
   let audit = null; // {run, step, res:[{t,m,n}], list:[...]}
   const BLUES = ['#BCD0E6', '#7895B5', '#5F7896', '#C9D6E4', '#D8DEE4', '#EEF1F4', '#DDE2E8'];
-  const rgbOf = s => { const m = String(s).match(/rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[, /]+([\d.]+))?/); return m ? [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]] : null; };
+  const rgbOf = s => { s = String(s); let m = s.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?/); if (m) return [m[1] * 255, m[2] * 255, m[3] * 255, m[4] == null ? 1 : +m[4]];
+    m = s.match(/rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[, /]+([\d.]+))?/); return m ? [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]] : null; };
   const lumA = c => .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
   const crA = (a, b) => { const x = lumA(a), y = lumA(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
   const inv = (c, a) => c.map((v, i) => i < 3 ? v + a * (255 - 2 * v) : v);
@@ -681,7 +682,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       let op = 1, bg = null, bgAt = -1; const chain = [];
       for (let p = el; p && p.nodeType === 1; p = p.parentElement){
         const pc = cs(p); chain.push(p); op *= +pc.opacity;
-        if (!bg){ if (pc.backgroundImage && pc.backgroundImage !== 'none'){ const g = pc.backgroundImage.match(/rgba?\([^)]+\)/); if (/url\(/.test(pc.backgroundImage) || !g) return; bg = rgbOf(g[0]); bgAt = chain.length - 1; }
+        if (!bg){ if (pc.backgroundImage && pc.backgroundImage !== 'none'){ const g = pc.backgroundImage.match(/rgba?\([^)]+\)|color\(srgb[^)]+\)/); if (/url\(/.test(pc.backgroundImage)) return; const gc = g && rgbOf(g[0]); if (gc && gc[3] >= .6){ bg = gc; bgAt = chain.length - 1; } else { const b = rgbOf(pc.backgroundColor); if (b && b[3] >= .6){ bg = b; bgAt = chain.length - 1; } } }
           else { const b = rgbOf(pc.backgroundColor); if (b && b[3] >= .6){ bg = b; bgAt = chain.length - 1; } } }
       }
       if (op < .5) return;

@@ -269,12 +269,13 @@
   }
   function photoPalettes(cols){
     if (!cols.length) return [];
-    const hs = cols.map(c => Object.assign({}, c, {hsl: hex2hsl(c.hex)}));
+    const hs = cols.map(c => { const v = hex2rgb(c.hex); return Object.assign({}, c, {hsl: hex2hsl(c.hex), ch: (Math.max(...v) - Math.min(...v)) / 255}); });
     const top = hs[0], bgHue = top.hsl[1] > .06 ? top.hsl[0] : null;
     // акценты: насыщенные и заметные, разные по тону
-    const cand = hs.filter(c => c.hsl[1] > .18 && c.hsl[2] > .18 && c.hsl[2] < .85).sort((a, b) => b.hsl[1] * Math.sqrt(b.n) - a.hsl[1] * Math.sqrt(a.n));
+    // мера — хрома (насколько цвет «цветной»): у светлых бежевых HSL-насыщенность обманчиво высокая
+    const cand = hs.filter(c => c.ch > .15 && c.hsl[2] > .15 && c.hsl[2] < .88).sort((a, b) => b.ch * Math.sqrt(b.n) - a.ch * Math.sqrt(a.n));
     const acc = []; cand.forEach(c => { if (acc.length < 3 && acc.every(a => Math.min(Math.abs(a.hsl[0] - c.hsl[0]), 360 - Math.abs(a.hsl[0] - c.hsl[0])) > 28)) acc.push(c); });
-    if (!acc.length) acc.push(hs.slice().sort((a, b) => b.hsl[1] - a.hsl[1])[0]);
+    if (!acc.length) acc.push(hs.slice().sort((a, b) => b.ch - a.ch)[0]);
     const out = acc.map((a, i) => ({n: i ? 'Из фото · ' + (i + 1) : 'Из фото', d: 'акцент ' + a.hex, c: palette(genKeys(a.hex, {bgHue, tint: bgHue == null ? .5 : 1.2}))}));
     out.push({n: 'Из фото · мягкая', d: 'акцент приглушён', c: palette(genKeys(acc[0].hex, {bgHue, tint: .5, sat: .6}))});
     return out;
@@ -674,7 +675,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       const fg0 = rgbOf(c.color);
       // «чужой» голубой
       if (blues.length){ const hit = ['color', 'backgroundColor', 'borderTopColor'].find(p => { const v = rgbOf(c[p]); return v && v[3] > .3 && blues.includes(v.slice(0, 3).map(Math.round).join(',')) && (p !== 'color' || own) && (p !== 'borderTopColor' || parseFloat(c.borderTopWidth) > 0); });
-        if (hit){ const k = 'b' + hit + (el.className || el.tagName); if (!seen.has(k)){ seen.add(k); out.push({kind: 'blue', el, txt: (el.textContent || '').trim().slice(0, 50) || '(' + el.tagName.toLowerCase() + ')', prop: hit, fg: rgb2hex(rgbOf(c[hit]).slice(0, 3)), where: label, tod}); } } }
+        if (hit){ const k = 'b' + hit + (el.className || el.tagName); const dup = out.find(o => o.k === k); if (dup) dup.n++; else { out.push({kind: 'blue', k, n: 1, el, txt: (el.textContent || '').trim().slice(0, 50) || '(' + el.tagName.toLowerCase() + ')', prop: hit, fg: rgb2hex(rgbOf(c[hit]).slice(0, 3)), where: label, tod}); } } }
       if (!own || !fg0 || fg0[3] < .35) return;
       // фон и фильтры по цепочке родителей
       let op = 1, bg = null, bgAt = -1; const chain = [];
@@ -690,9 +691,10 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       if (fg[3] < 1) fg = fg.map((v, i) => i < 3 ? v * fg[3] + bb[i] * (1 - fg[3]) : 1);
       const ratio = crA(fg, bb);
       if (ratio >= 3) return;
-      const txt = el.textContent.trim().replace(/\s+/g, ' ').slice(0, 50), k = txt + '|' + Math.round(ratio * 10);
-      if (seen.has(k)) return; seen.add(k);
-      out.push({kind: 'read', el, txt, ratio, fg: rgb2hex(fg.slice(0, 3)), bg: rgb2hex(bb.slice(0, 3)), where: label, tod});
+      // одинаковые места (тот же класс и те же цвета) — одной строкой «×N»
+      const txt = el.textContent.trim().replace(/\s+/g, ' ').slice(0, 50), fh = rgb2hex(fg.slice(0, 3)), bh = rgb2hex(bb.slice(0, 3)), k = (el.className || el.tagName) + '|' + fh + '|' + bh;
+      const dup = out.find(o => o.k === k); if (dup){ dup.n++; return; }
+      out.push({kind: 'read', k, n: 1, el, txt, ratio, fg: fh, bg: bh, where: label, tod});
     }));
     return out;
   }
@@ -701,7 +703,7 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
   async function overTods(doc, scope, label, res, list){
     const html = doc.documentElement, was = html.dataset.tod, off = noAnim(doc);
     for (const m of TOD_ORDER){ html.dataset.tod = m; await wait(120);
-      const a = auditDoc(doc, scope, label, m); res.push({t: label, m, read: a.filter(x => x.kind === 'read').length, blue: a.filter(x => x.kind === 'blue').length}); list.push(...a);
+      const a = auditDoc(doc, scope, label, m); res.push({t: label, m, read: a.filter(x => x.kind === 'read').reduce((s, x) => s + x.n, 0), blue: a.filter(x => x.kind === 'blue').reduce((s, x) => s + x.n, 0)}); list.push(...a);
       audit.step = label + ' · ' + TOD_COLORS[m].name; toast('Проверяю: ' + audit.step); }
     html.dataset.tod = was; off();
   }
@@ -737,10 +739,10 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     const by = {}; audit.res.forEach(r => { (by[r.t] = by[r.t] || {})[r.m] = r; });
     const cell = r => !r ? '<td>—</td>' : r.err ? '<td class="bad">не открылась</td>' : (r.read + r.blue) ? `<td class="bad">${r.read ? r.read + ' ◐' : ''}${r.read && r.blue ? ' ' : ''}${r.blue ? r.blue + ' ●' : ''}</td>` : '<td class="ok">✓</td>';
     const tbl = `<table class="aud"><tr><th></th>${TOD_ORDER.map(m => `<th>${TOD_COLORS[m].ic}</th>`).join('')}</tr>${Object.entries(by).map(([t, ms]) => `<tr><th>${esc(t)}</th>${ms[''] && ms[''].err ? `<td colspan="4" class="bad">не открылась</td>` : TOD_ORDER.map(m => cell(ms[m])).join('')}</tr>`).join('')}</table>`;
-    const items = audit.list.slice(0, 40).map((x, i) => `<div class="chg"><div class="n">${x.kind === 'read' ? `<i style="--c:${x.bg};color:${x.fg};display:inline-flex;align-items:center;justify-content:center;font:700 9px/1 sans-serif">Аа</i>` : `<i style="--c:${x.fg}"></i>`}${esc(x.txt || '(без текста)')}
+    const items = audit.list.slice(0, 40).map((x, i) => `<div class="chg"><div class="n">${x.kind === 'read' ? `<i style="--c:${x.bg};color:${x.fg};display:inline-flex;align-items:center;justify-content:center;font:700 9px/1 sans-serif">Аа</i>` : `<i style="--c:${x.fg}"></i>`}${esc(x.txt || '(без текста)')}${x.n > 1 ? ` <b>×${x.n}</b>` : ''}
       <small>${esc(x.where)} · ${TOD_COLORS[x.tod].name.toLowerCase()} → ${x.kind === 'read' ? 'плохо читается, контраст ' + x.ratio.toFixed(1) + ' (нужно от 3)' : 'старый голубой ' + x.fg}</small></div>
       ${x.el && x.el.ownerDocument === D ? `<button data-aud="${i}">показать</button>` : ''}</div>`).join('');
-    return `<div class="note">${audit.list.length ? `Нашлось ${audit.list.length}: ◐ — плохо читается, ● — остался старый голубой. Обычно хватает подправить цвет этого времени суток во вкладке «Цвета».` : '<b>Всё в порядке ✓</b> Текст читается, чужих цветов нет.'}${audit.err ? ' Ошибка: ' + esc(audit.err) : ''}</div>${tbl}${items}
+    return `<div class="note">${audit.list.length ? `Нашлось мест: ${audit.list.length}: ◐ — плохо читается, ● — остался старый голубой. Обычно хватает подправить цвет этого времени суток во вкладке «Цвета».` : '<b>Всё в порядке ✓</b> Текст читается, чужих цветов нет.'}${audit.err ? ' Ошибка: ' + esc(audit.err) : ''}</div>${tbl}${items}
       <button class="big sec" data-a="audit">Проверить ещё раз${audit.at ? ' · было в ' + audit.at : ''}</button>`;
   }
   function showAudit(x){

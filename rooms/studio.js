@@ -58,7 +58,9 @@
     let h = 0; if (d){ h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; }
     return [h, mx ? d / mx : 0, mx]; }
   function hsv2rgb(h, s, v){ const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); }; return [f(5), f(3), f(1)].map(x => x * 255); }
-  const hsl2hex = (h, s, l) => { const a = s * Math.min(l, 1 - l), f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); }; return rgb2hex([f(0), f(8), f(4)].map(x => x * 255)); };
+  const hsl2hex = (h, s, l) => { h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+    const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l), f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return rgb2hex([f(0), f(8), f(4)].map(x => x * 255)); };
   const hex2hsl = hx => { const [r, g, b] = hex2rgb(hx).map(x => x / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
     if (!d) return [0, 0, l]; const s = d / (1 - Math.abs(2 * l - 1)); let h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; return [h, s, l]; };
   // родственные оттенки: светлее/темнее того же цвета и соседние тона
@@ -227,6 +229,57 @@
       eveningBg, eveningDark: mixHex(graphite, '#3A2A1C', .25), eveningAccent: fit(moonDay, eveningBg, 3.2, '#000000')};
   }
   const PALS = PAL_GROUPS.flatMap(([g, ps]) => ps.map(([n, d, k]) => ({g, n, d, c: palette(k)})));
+  // ---------- палитра из одного цвета и из фото (24.11)
+  // accent — любой цвет; tint — насколько фон и тёмные блоки отдают его оттенком; bgHue — свой оттенок фона (тёплый/холодный)
+  function genKeys(accent, o){
+    o = o || {}; const [h, s0] = hex2hsl(accent), s = Math.max(.25, s0), t = o.tint == null ? 1 : o.tint, bh = o.bgHue == null ? h : o.bgHue;
+    const ss = o.sat == null ? 1 : o.sat;
+    return [hsl2hex(bh, .16 * t, o.bgL || .957), hsl2hex(h, .16 * t, .19), hsl2hex(h, .17 * t, o.nightL || .155), hsl2hex(h, .19 * t, (o.nightL || .155) - .045),
+      hsl2hex(h, Math.min(.85, s * .9 * ss), .8), hsl2hex(h, Math.min(.8, s * .85 * ss), .45)];
+  }
+  // «похожие»: оттенки рядом и разный характер фона
+  function variants(accent){
+    const [h] = hex2hsl(accent);
+    return [
+      ['Как есть', 'ровно этот акцент', genKeys(accent)],
+      ['Спокойнее', 'приглушённый, почти серый фон', genKeys(accent, {tint: .35, sat: .7})],
+      ['Насыщеннее', 'ярче акцент и сильнее оттенок', genKeys(accent, {tint: 1.8, sat: 1.25})],
+      ['Тёплый фон', 'акцент на сливочном', genKeys(accent, {bgHue: 38, tint: 1.3})],
+      ['Холодный фон', 'акцент на голубоватом', genKeys(accent, {bgHue: 212, tint: 1.3})],
+      ['Глубокая ночь', 'ночь почти чёрная', genKeys(accent, {nightL: .11})],
+      ['Соседний тон ←', 'на 25° левее по кругу', genKeys(hsl2hex(h - 25, ...hex2hsl(accent).slice(1)))],
+      ['Соседний тон →', 'на 25° правее по кругу', genKeys(hsl2hex(h + 25, ...hex2hsl(accent).slice(1)))],
+      ['Противоположный', 'контрастная пара', genKeys(hsl2hex(h + 180, ...hex2hsl(accent).slice(1)), {tint: .6})]
+    ].map(([n, d, k]) => ({n, d, c: palette(k)}));
+  }
+  // главные цвета картинки: уменьшаем до 72px, k-средних по 8 кластерам
+  function photoColors(img){
+    const W = 72, cv = D.createElement('canvas'), r = Math.min(1, W / Math.max(img.width, img.height)); cv.width = Math.max(1, Math.round(img.width * r)); cv.height = Math.max(1, Math.round(img.height * r));
+    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0, cv.width, cv.height);
+    const px = []; const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) px.push([d[i], d[i + 1], d[i + 2]]);
+    if (!px.length) return [];
+    let C = Array.from({length: 8}, (_, i) => px[Math.floor((i + .5) * px.length / 8)].slice());
+    for (let it = 0; it < 10; it++){
+      const sum = C.map(() => [0, 0, 0, 0]);
+      px.forEach(p => { let bi = 0, bd = 1e9; C.forEach((c, i) => { const dd = (c[0] - p[0]) ** 2 + (c[1] - p[1]) ** 2 + (c[2] - p[2]) ** 2; if (dd < bd){ bd = dd; bi = i; } }); const s = sum[bi]; s[0] += p[0]; s[1] += p[1]; s[2] += p[2]; s[3]++; });
+      C = sum.map((s, i) => s[3] ? [s[0] / s[3], s[1] / s[3], s[2] / s[3], s[3]] : C[i]);
+    }
+    return C.filter(c => c[3]).map(c => ({hex: rgb2hex(c.slice(0, 3)), n: c[3] / px.length})).sort((a, b) => b.n - a.n);
+  }
+  function photoPalettes(cols){
+    if (!cols.length) return [];
+    const hs = cols.map(c => Object.assign({}, c, {hsl: hex2hsl(c.hex)}));
+    const top = hs[0], bgHue = top.hsl[1] > .06 ? top.hsl[0] : null;
+    // акценты: насыщенные и заметные, разные по тону
+    const cand = hs.filter(c => c.hsl[1] > .18 && c.hsl[2] > .18 && c.hsl[2] < .85).sort((a, b) => b.hsl[1] * Math.sqrt(b.n) - a.hsl[1] * Math.sqrt(a.n));
+    const acc = []; cand.forEach(c => { if (acc.length < 3 && acc.every(a => Math.min(Math.abs(a.hsl[0] - c.hsl[0]), 360 - Math.abs(a.hsl[0] - c.hsl[0])) > 28)) acc.push(c); });
+    if (!acc.length) acc.push(hs.slice().sort((a, b) => b.hsl[1] - a.hsl[1])[0]);
+    const out = acc.map((a, i) => ({n: i ? 'Из фото · ' + (i + 1) : 'Из фото', d: 'акцент ' + a.hex, c: palette(genKeys(a.hex, {bgHue, tint: bgHue == null ? .5 : 1.2}))}));
+    out.push({n: 'Из фото · мягкая', d: 'акцент приглушён', c: palette(genKeys(acc[0].hex, {bgHue, tint: .5, sat: .6}))});
+    return out;
+  }
+  let gen = null; // {kind:'one'|'photo', base, cols, list}
   const palOn = p => Object.keys(p.c).every(k => String(st.colors[k] || '').toUpperCase() === p.c[k].toUpperCase());
   const MOTION_KEYS =['anim', 'dur', 'stagger', 'dist', 'ease', 'headAnim', 'imgReveal'];
   const PRESETS = [
@@ -351,6 +404,24 @@ input[type=range]{width:100%;accent-color:#BCD0E6}
 .seg button:hover:not(.on){border-color:rgba(188,208,230,.6)}
 select{width:100%;background:#1C1F23;color:#EEF1F4;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:8px;font:13px inherit}
 .col{display:flex;gap:8px;align-items:center}
+.aud{width:100%;border-collapse:separate;border-spacing:3px;margin:8px 0;font-size:12px}
+.aud th{font-weight:600;color:#C9D0D8;text-align:left;padding:3px 4px}
+.aud td{text-align:center;padding:5px 2px;border-radius:7px;background:rgba(255,255,255,.04)}
+.aud td.ok{color:#8FE0B0}.aud td.bad{color:#FFB0A0;background:rgba(255,120,100,.12)}
+.aud-spin{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid rgba(188,208,230,.3);border-top-color:#BCD0E6;animation:audS .8s linear infinite;vertical-align:-2px;margin-right:4px}
+@keyframes audS{to{transform:rotate(360deg)}}
+.own{margin:4px 0 6px}
+.own-r{display:flex;gap:6px;align-items:center}
+.own-c{position:relative;width:38px;height:38px;flex:none;border-radius:50%;overflow:hidden;border:1px solid rgba(255,255,255,.25)}
+.own-c input{position:absolute;inset:-8px;width:60px;height:60px;opacity:0;cursor:pointer}
+.own-c span{position:absolute;inset:0;background:var(--c);pointer-events:none}
+.own-r input[type=text]{width:92px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.05);color:#EEF1F4;font:600 13px/1 ui-monospace,monospace;padding:0 10px}
+.own-r .mini{flex:1;height:36px;border-radius:10px;border:1px solid rgba(188,208,230,.4);background:rgba(188,208,230,.12);color:#EEF1F4;font:600 12px/1 inherit}
+.own-ph{margin-top:8px!important}
+.own-sw{display:flex;height:22px;border-radius:8px;overflow:hidden;margin:10px 0 6px;border:1px solid rgba(255,255,255,.18)}
+.own-sw s{background:var(--c);display:block}
+.own-img{display:block;max-width:100%;max-height:120px;border-radius:10px;margin:6px 0}
+main.drop{outline:2px dashed #BCD0E6;outline-offset:-6px}
 .pals{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0 4px}
 .pals .pgh{grid-column:1/-1;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#8E97A1;margin:6px 0 0}
 .pals button{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:7px 7px 8px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#EEF1F4;font:600 12px/1.15 inherit;text-align:left}
@@ -549,12 +620,135 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
     return `<div class="tl" style="margin-top:4px">Готовые палитры</div>
       <div class="note" style="margin-top:4px">Одним нажатием красит весь сайт — утро, день, вечер и ночь, корзину, поиск, каталог, карточки, курсор. Форму, шрифты и эффекты не трогает. Потом любой цвет можно подправить ниже.</div>
       <div class="pals">${pals}</div>
+      ${ownUI()}
       <div class="tl">1. Какое время суток красим?</div>
       <div class="todpick">${TOD_ORDER.map(k => { const t = TOD_COLORS[k]; return `<button data-ctod="${k}" class="${k === m ? 'on' : ''}"><span>${t.ic}</span><b>${t.name}</b><i>${t.f.map(f => `<s style="--c:${esc(get(f.k))}"></s>`).join('')}</i></button>`; }).join('')}</div>
       <div class="tl">2. Цвета: ${M.name.toLowerCase()} <span style="color:#6E7780">· ${M.when}</span></div>
       <div class="note" style="margin-top:4px">Сайт сейчас показан как <b>${M.name.toLowerCase()}</b>. Нажмите на квадратик цвета и ведите по палитре — видно сразу.</div>
       ${M.f.map(field).join('')}
       <button class="big sec" data-a="ctod-reset">Вернуть цвета «${M.name}» как были</button>`;
+  }
+  function ownUI(){
+    const base = gen && gen.kind === 'one' ? gen.base : (st.colors.moonDay || '#7895B5');
+    const cards = gen ? gen.list.map((p, i) => { const c = p.c; return `<button data-gen="${i}" class="${palOn(p) ? 'on' : ''}" title="${esc(p.d)}"><i style="background:linear-gradient(90deg,${c.light} 0 25%,${c.moonDay} 25% 50%,${c.night} 50% 75%,${c.moon} 75%)"></i><b>${esc(p.n)}</b><small>${esc(p.d)}</small></button>`; }).join('') : '';
+    return `<div class="tl">Своя палитра</div>
+      <div class="own">
+        <div class="own-r"><label class="own-c" title="Выбрать цвет"><input type="color" data-own="pick" value="${esc(base.slice(0, 7).toLowerCase())}"><span style="--c:${esc(base)}"></span></label>
+          <input type="text" data-own="hex" value="${esc(base)}" maxlength="7" spellcheck="false" placeholder="#7895B5"><button class="mini" data-a="own-go">Подобрать от цвета</button></div>
+        <button class="big sec own-ph" data-a="own-photo">🖼 Палитра из фото или логотипа</button>
+        <input type="file" accept="image/*" data-own="file" hidden>
+        <div class="note" style="margin-top:6px">Цвет: выберите кружком или впишите HEX — покажу 9 вариантов. Фото: интерьер, ткань, логотип клиента — можно и перетащить картинку сюда, и вставить Ctrl+V.</div>
+        ${gen && gen.kind === 'photo' ? `<div class="own-sw">${gen.cols.slice(0, 8).map(c => `<s style="--c:${c.hex};flex:${Math.max(.4, c.n * 10)}" title="${c.hex}"></s>`).join('')}</div>` : ''}
+        ${gen && gen.kind === 'photo' && gen.img ? `<img class="own-img" src="${gen.img}" alt="">` : ''}
+        ${cards ? `<div class="pals">${cards}</div>` : ''}
+      </div>`;
+  }
+  function genFrom(kind, v){
+    if (kind === 'one'){ v = String(v || '').trim(); if (!/^#?[0-9a-f]{6}$/i.test(v)) return toast('Нужен цвет вида #7895B5'); v = (v[0] === '#' ? v : '#' + v).toUpperCase(); gen = {kind, base: v, list: variants(v)}; sync(); return; }
+    const f = v; if (!f || !/^image\//.test(f.type)) return toast('Нужна картинка: jpg, png, webp, svg');
+    const rd = new FileReader(); rd.onload = () => { const im = new Image(); im.onload = () => {
+      const cols = photoColors(im); if (!cols.length) return toast('Не получилось прочитать цвета');
+      let thumb = ''; try { const cv = D.createElement('canvas'), r = 220 / Math.max(im.width, im.height); cv.width = im.width * r; cv.height = im.height * r; cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); thumb = cv.toDataURL('image/jpeg', .8); } catch (e){}
+      gen = {kind: 'photo', cols, img: thumb, list: photoPalettes(cols)}; sync(); toast('Нашёл цвета — выберите вариант'); };
+      im.onerror = () => toast('Картинка не открылась'); im.src = rd.result; }; rd.readAsDataURL(f);
+  }
+  // ---------- проверка перед экспортом (24.11): главная, каталог, окно товара, корзина, поиск × утро/день/вечер/ночь
+  // ищем текст, который плохо читается (контраст < 3), и остатки фирменных голубых, если выбрана другая палитра
+  let audit = null; // {run, step, res:[{t,m,n}], list:[...]}
+  const BLUES = ['#BCD0E6', '#7895B5', '#5F7896', '#C9D6E4', '#D8DEE4', '#EEF1F4', '#DDE2E8'];
+  const rgbOf = s => { const m = String(s).match(/rgba?\(([\d.]+)[, ]+([\d.]+)[, ]+([\d.]+)(?:[, /]+([\d.]+))?/); return m ? [+m[1], +m[2], +m[3], m[4] == null ? 1 : +m[4]] : null; };
+  const lumA = c => .2126 * lin(c[0]) + .7152 * lin(c[1]) + .0722 * lin(c[2]);
+  const crA = (a, b) => { const x = lumA(a), y = lumA(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
+  const inv = (c, a) => c.map((v, i) => i < 3 ? v + a * (255 - 2 * v) : v);
+  function auditDoc(doc, scope, label, tod){
+    const W = doc.defaultView, out = [], seen = new Set();
+    const blues = JSON.stringify(Object.values(st.colors).map(x => String(x).toUpperCase()).sort()) === JSON.stringify(Object.values(DEF_C).map(x => x.toUpperCase()).sort()) ? [] :
+      BLUES.filter(b => !Object.values(st.colors).some(c => String(c).toUpperCase() === b)).map(b => hex2rgb(b).join(','));
+    const csC = new Map(), cs = el => { let c = csC.get(el); if (!c){ c = W.getComputedStyle(el); csC.set(el, c); } return c; };
+    const roots = [...doc.querySelectorAll(scope)];
+    roots.forEach(root => root.querySelectorAll('*').forEach(el => {
+      if (out.length > 60 || el.closest('.mls-host,script,style,svg,noscript,iframe,canvas')) return;
+      const own = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 1);
+      const c = cs(el); if (c.display === 'none' || c.visibility !== 'visible') return;
+      const r = el.getBoundingClientRect(); if (r.width < 2 || r.height < 2) return;
+      const fg0 = rgbOf(c.color);
+      // «чужой» голубой
+      if (blues.length){ const hit = ['color', 'backgroundColor', 'borderTopColor'].find(p => { const v = rgbOf(c[p]); return v && v[3] > .3 && blues.includes(v.slice(0, 3).map(Math.round).join(',')) && (p !== 'color' || own) && (p !== 'borderTopColor' || parseFloat(c.borderTopWidth) > 0); });
+        if (hit){ const k = 'b' + hit + (el.className || el.tagName); if (!seen.has(k)){ seen.add(k); out.push({kind: 'blue', el, txt: (el.textContent || '').trim().slice(0, 50) || '(' + el.tagName.toLowerCase() + ')', prop: hit, fg: rgb2hex(rgbOf(c[hit]).slice(0, 3)), where: label, tod}); } } }
+      if (!own || !fg0 || fg0[3] < .35) return;
+      // фон и фильтры по цепочке родителей
+      let op = 1, bg = null, bgAt = -1; const chain = [];
+      for (let p = el; p && p.nodeType === 1; p = p.parentElement){
+        const pc = cs(p); chain.push(p); op *= +pc.opacity;
+        if (!bg){ if (pc.backgroundImage && pc.backgroundImage !== 'none'){ const g = pc.backgroundImage.match(/rgba?\([^)]+\)/); if (/url\(/.test(pc.backgroundImage) || !g) return; bg = rgbOf(g[0]); bgAt = chain.length - 1; }
+          else { const b = rgbOf(pc.backgroundColor); if (b && b[3] >= .6){ bg = b; bgAt = chain.length - 1; } } }
+      }
+      if (op < .5) return;
+      if (!bg){ bg = [255, 255, 255, 1]; bgAt = chain.length; }
+      let fg = fg0, bb = bg;
+      chain.forEach((p, i) => { const f = cs(p).filter, m = f && f.match(/invert\(([\d.]+)\)/); if (!m) return; const a = +m[1]; fg = inv(fg, a); if (i >= bgAt) bb = inv(bb, a); });
+      if (fg[3] < 1) fg = fg.map((v, i) => i < 3 ? v * fg[3] + bb[i] * (1 - fg[3]) : 1);
+      const ratio = crA(fg, bb);
+      if (ratio >= 3) return;
+      const txt = el.textContent.trim().replace(/\s+/g, ' ').slice(0, 50), k = txt + '|' + Math.round(ratio * 10);
+      if (seen.has(k)) return; seen.add(k);
+      out.push({kind: 'read', el, txt, ratio, fg: rgb2hex(fg.slice(0, 3)), bg: rgb2hex(bb.slice(0, 3)), where: label, tod});
+    }));
+    return out;
+  }
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const noAnim = doc => { const s = doc.createElement('style'); s.className = 'mls-audit'; s.textContent = '*,*::before,*::after{transition:none!important;animation-duration:0s!important;animation-delay:0s!important}'; doc.head.appendChild(s); return () => s.remove(); };
+  async function overTods(doc, scope, label, res, list){
+    const html = doc.documentElement, was = html.dataset.tod, off = noAnim(doc);
+    for (const m of TOD_ORDER){ html.dataset.tod = m; await wait(120);
+      const a = auditDoc(doc, scope, label, m); res.push({t: label, m, read: a.filter(x => x.kind === 'read').length, blue: a.filter(x => x.kind === 'blue').length}); list.push(...a);
+      audit.step = label + ' · ' + TOD_COLORS[m].name; toast('Проверяю: ' + audit.step); }
+    html.dataset.tod = was; off();
+  }
+  function frameDoc(path){
+    return new Promise(res => { const f = D.createElement('iframe'); f.style.cssText = 'position:fixed;left:-3000px;top:0;width:1280px;height:900px;border:0;visibility:hidden';
+      const u = new URL(path, location.href); u.searchParams.set('studio-frame', '1'); f.src = u.toString();
+      let done = false; const fin = ok => { if (done) return; done = true; res(ok ? f : null); };
+      f.onload = () => setTimeout(() => fin(true), 3500); setTimeout(() => fin(false), 20000); D.body.appendChild(f); });
+  }
+  async function runAudit(){
+    if (audit && audit.run) return;
+    audit = {run: true, res: [], list: [], step: ''}; sync();
+    const res = audit.res, list = audit.list, isHome = location.pathname === '/', isCat = /^\/catalog/.test(location.pathname);
+    try {
+      await overTods(D, 'body', isHome ? 'Главная' : 'Эта страница', res, list);
+      if (window.tcart__openCart){ window.tcart__openCart(); await wait(700); await overTods(D, '.t706', 'Корзина', res, list); try { window.tcart__closeCart(); } catch (e){ const cb = D.querySelector('.t706__close,.t706__sidebar-close'); if (cb) cb.click(); } await wait(300); }
+      if (window.mlSearchOpen){ window.mlSearchOpen('люстра'); for (let i = 0; i < 40 && !D.querySelector('.ml-sr-grid,.ml-sr-empty'); i++) await wait(250); await overTods(D, '.ml-sr', 'Поиск', res, list);
+        const x = D.querySelector('.ml-sr-x'); if (x) x.click(); }
+      for (const [path, label] of [[isHome ? null : '/', 'Главная'], [isCat ? null : '/catalog', 'Каталог']]){
+        if (!path) continue; audit.step = label + ' (загружаю)'; toast('Открываю: ' + label);
+        const f = await frameDoc(path); if (!f){ res.push({t: label, m: '', err: 1}); continue; }
+        const d = f.contentDocument; await overTods(d, 'body', label, res, list);
+        if (label === 'Каталог'){ const c = d.querySelector('.mk-card:not(.ml-hc-tile)'); if (c){ c.click(); await wait(800); if (d.querySelector('.mk-pop:not([hidden])')) await overTods(d, '.mk-pop', 'Окно товара', res, list); } }
+        f.remove();
+      }
+    } catch (e){ audit.err = String(e && e.message || e); }
+    audit.run = false; audit.at = new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'});
+    const n = list.length; toast(n ? 'Проверка: нашлось ' + n : 'Проверка: всё в порядке ✓'); sync();
+  }
+  function auditUI(){
+    if (!audit) return `<div class="note">Пройду главную, каталог, окно товара, корзину и поиск в каждом времени суток: где текст плохо читается и не остались ли старые голубые цвета при другой палитре. Около минуты; сайт в это время будет мигать.</div><button class="big sec" data-a="audit">Проверить сайт</button>`;
+    if (audit.run) return `<div class="note"><span class="aud-spin"></span> Проверяю… ${esc(audit.step || '')}</div>`;
+    const by = {}; audit.res.forEach(r => { (by[r.t] = by[r.t] || {})[r.m] = r; });
+    const cell = r => !r ? '<td>—</td>' : r.err ? '<td class="bad">не открылась</td>' : (r.read + r.blue) ? `<td class="bad">${r.read ? r.read + ' ◐' : ''}${r.read && r.blue ? ' ' : ''}${r.blue ? r.blue + ' ●' : ''}</td>` : '<td class="ok">✓</td>';
+    const tbl = `<table class="aud"><tr><th></th>${TOD_ORDER.map(m => `<th>${TOD_COLORS[m].ic}</th>`).join('')}</tr>${Object.entries(by).map(([t, ms]) => `<tr><th>${esc(t)}</th>${ms[''] && ms[''].err ? `<td colspan="4" class="bad">не открылась</td>` : TOD_ORDER.map(m => cell(ms[m])).join('')}</tr>`).join('')}</table>`;
+    const items = audit.list.slice(0, 40).map((x, i) => `<div class="chg"><div class="n">${x.kind === 'read' ? `<i style="--c:${x.bg};color:${x.fg};display:inline-flex;align-items:center;justify-content:center;font:700 9px/1 sans-serif">Аа</i>` : `<i style="--c:${x.fg}"></i>`}${esc(x.txt || '(без текста)')}
+      <small>${esc(x.where)} · ${TOD_COLORS[x.tod].name.toLowerCase()} → ${x.kind === 'read' ? 'плохо читается, контраст ' + x.ratio.toFixed(1) + ' (нужно от 3)' : 'старый голубой ' + x.fg}</small></div>
+      ${x.el && x.el.ownerDocument === D ? `<button data-aud="${i}">показать</button>` : ''}</div>`).join('');
+    return `<div class="note">${audit.list.length ? `Нашлось ${audit.list.length}: ◐ — плохо читается, ● — остался старый голубой. Обычно хватает подправить цвет этого времени суток во вкладке «Цвета».` : '<b>Всё в порядке ✓</b> Текст читается, чужих цветов нет.'}${audit.err ? ' Ошибка: ' + esc(audit.err) : ''}</div>${tbl}${items}
+      <button class="big sec" data-a="audit">Проверить ещё раз${audit.at ? ' · было в ' + audit.at : ''}</button>`;
+  }
+  function showAudit(x){
+    if (!x || !x.el) return; setTod(x.tod);
+    if (x.where === 'Корзина' && window.tcart__openCart) window.tcart__openCart();
+    if (x.where === 'Поиск' && window.mlSearchOpen) window.mlSearchOpen('люстра');
+    setTimeout(() => { if (!x.el.isConnected) return toast('Этот элемент уже перерисован — проверьте ещё раз'); x.el.scrollIntoView({block: 'center', behavior: 'smooth'});
+      const o = x.el.style.outline, oo = x.el.style.outlineOffset; x.el.style.outline = '3px solid #FF5A5A'; x.el.style.outlineOffset = '3px'; setTimeout(() => { x.el.style.outline = o; x.el.style.outlineOffset = oo; }, 2600); }, 500);
   }
   function doneUI(){
     const ch = changes();
@@ -563,6 +757,8 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       return `<div class="chg"><div class="n">${col ? `<i style="--c:${esc(v)}"></i>` : ''}${esc((f.sec && f.t ? f.sec + ' · ' : '') + (f.t || 'Форма курсора'))}<small>${esc(TABN[f.tab])}${f.grp ? ' · ' + esc(f.grp) : ''} → <b>${esc(col ? v : valName(f, v))}</b></small></div>
         <button data-goto="${f.k}" title="Открыть эту настройку">открыть</button>${f.k.startsWith('colors.') ? `<button data-cdef="${f.k}">вернуть</button>` : `<button data-reset="${f.k}">вернуть</button>`}</div>`; };
     return `<div class="note"><b>Как закрепить вид для всех посетителей:</b><br>1. Нажмите «Скопировать для HEAD».<br>2. Тильда → Настройки сайта → Вставка кода → «HTML-код для вставки внутрь HEAD» → «Редактировать код».<br>3. Выделите всё старое (Ctrl+A), вставьте (Ctrl+V), «Сохранить».<br>4. На странице проекта — «Опубликовать все страницы».</div>
+      <div class="tl">Проверка перед экспортом</div>
+      ${auditUI()}
       <div class="tl">Что вы поменяли (${ch.length})</div>
       ${ch.length ? ch.map(row).join('') : '<div class="note">Пока всё как на сайте — менять нечего.</div>'}
       ${bl ? '<div class="note warn">Порядок блоков в код не попадает — его повторяют в редакторе Тильды (вкладка «Блоки»).</div>' : ''}
@@ -634,6 +830,13 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       set(k, +el.value, true); return; }
     if (el.type === 'text'){ let v = el.value.trim(); if (v && v[0] !== '#') v = '#' + v;
       if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(v)){ v = v.toUpperCase(); if (!gesture){ push(); gesture = true; } if (pkHsv && pkHsv.k === k) pkHsv.hsv = rgb2hsv(hex2rgb(v)); put(k, v, true); pkPaint(k, v); } } });
+  main.addEventListener('change', e => { const o = e.target.dataset && e.target.dataset.own;
+    if (o === 'pick' || o === 'hex'){ genFrom('one', e.target.value); return; }
+    if (o === 'file'){ genFrom('photo', e.target.files[0]); e.target.value = ''; return; } });
+  main.addEventListener('dragover', e => { if (tab === 'color' && e.dataTransfer && [...e.dataTransfer.items].some(i => i.kind === 'file')){ e.preventDefault(); main.classList.add('drop'); } });
+  main.addEventListener('dragleave', () => main.classList.remove('drop'));
+  main.addEventListener('drop', e => { main.classList.remove('drop'); const f = e.dataTransfer && e.dataTransfer.files[0]; if (!f || tab !== 'color') return; e.preventDefault(); genFrom('photo', f); });
+  D.addEventListener('paste', e => { if (tab !== 'color' || P.classList.contains('min')) return; const it = [...((e.clipboardData || {}).items || [])].find(i => /^image\//.test(i.type)); if (!it) return; e.preventDefault(); genFrom('photo', it.getAsFile()); });
   main.addEventListener('change', e => { const el = e.target;
     if (el.tagName === 'SELECT'){ set(el.dataset.k, el.value); return; }
     if (gesture){ gesture = false; const k = el.dataset.k; if (k && (k.startsWith('colors.') || k === 'curHex')) remember(k, get(k)); sync(); if (MOTION_KEYS.includes(k)) replaySoon(); } });
@@ -651,6 +854,8 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       const o = el.style.outline; el.style.outline = '2px solid #BCD0E6'; el.style.outlineOffset = '4px'; setTimeout(() => { el.style.outline = o; }, 1600); return; }
     if (b.dataset.sva != null){ const x = saves()[+b.dataset.sva]; if (!x) return; push(); const keepT = st.texts; st = JSON.parse(JSON.stringify(x.st)); st.texts = keepT; st.colors = Object.assign({}, headC, st.colors || {}); save(); S.apply(live()); sync(); replay(); toast('Вариант «' + x.n + '»'); return; }
     if (b.dataset.svd != null){ const a = saves(); a.splice(+b.dataset.svd, 1); savesPut(a); sync(); return; }
+    if (b.dataset.aud != null){ showAudit(audit && audit.list[+b.dataset.aud]); return; }
+    if (b.dataset.gen != null && gen){ const p = gen.list[+b.dataset.gen]; push(); st.colors = Object.assign({}, st.colors, p.c); openPk = null; pkHsv = null; save(); S.apply(live()); sync(); toast('Палитра «' + p.n + '»'); return; }
     if (b.dataset.pal != null){ const p = PALS[+b.dataset.pal]; push(); st.colors = Object.assign({}, st.colors, p.c); openPk = null; pkHsv = null; save(); S.apply(live()); sync(); toast('Палитра «' + p.n + '» — загляните в ночь и корзину'); return; }
     if (b.dataset.ctod){ setTod(b.dataset.ctod); openPk = null; pkHsv = null; sync(); return; }
     if (b.dataset.sw){ openPk = openPk === b.dataset.sw ? null : b.dataset.sw; pkHsv = null; sync(); return; }
@@ -664,6 +869,9 @@ ${TOD_ORDER.map(m => `  /* ${TOD_COLORS[m].name.toUpperCase()} */\n` + TOD_COLOR
       Object.keys(st).forEach(k => st[k] === undefined && delete st[k]); save(); S.apply(live()); sync(); toast('Пресет «' + p.n + '»'); replay(); return; }
     if (b.dataset.b){ moveBlock(b.closest('.bl').dataset.id, b.dataset.b); return; }
     const a = b.dataset.a;
+    if (a === 'audit') runAudit();
+    if (a === 'own-go') genFrom('one', (main.querySelector('[data-own="hex"]') || {}).value);
+    if (a === 'own-photo') main.querySelector('[data-own="file"]').click();
     if (a === 'save'){ const inp = main.querySelector('.saves input'), n = (inp.value || '').trim() || 'Вариант ' + (saves().length + 1);
       const arr = saves().filter(x => x.n !== n); arr.unshift({n, d: new Date().toLocaleDateString('ru-RU'), st: Object.assign({}, st, {blocks: undefined, texts: undefined})}); savesPut(arr.slice(0, 20)); sync(); toast('Сохранено: ' + n); }
     if (a === 'pick') pickMode(!picking);

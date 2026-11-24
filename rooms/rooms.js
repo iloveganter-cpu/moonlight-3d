@@ -1104,7 +1104,7 @@ function extras(){
   })();
   // ---------- каталог: панель разделов слева + выезжающая шторка, товары Тильды справа
   // страницы, которые уже собраны на тест-сайте: ссылки живого сайта ведут на них (только на *.tilda.ws)
-  const ML_LOCAL = {'/kranz_round': '/kranz'};
+  const ML_LOCAL = {'/kranz_round': '/kranz', '/ourworks': '/ourworks'};
   // страницы категорий тест-сайта — те же адреса, что на живом
   'lustra lustra_potolok podvessvetilniki nastensvet nastolsvet tochechnye_svetilniki nakladnye_svetilniki svetilniki_gipsovye ulichnye_osveshchenie kommercheskie standart_lamp lamposhki lenta profil bloki_pitaniya umnye_datchiki termostaty shinoprovod_220 svet_220 magnit_shinoprovod magneticstandard magnet20 super5 stluceband eglo lyuchki atlas_design_karbon asfora_rozetki rita-mutlusan_bk totelectric wesa artgallery'.split(' ').forEach(s => { ML_LOCAL['/' + s] = '/' + s; });
   const mlLocal = h => { if (!/\.tilda\.ws$/.test(location.host)) return h;

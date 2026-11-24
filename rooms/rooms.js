@@ -2019,7 +2019,9 @@ function extras(){
   (() => {
     if (window.__mlSearch) return; window.__mlSearch = 1;
     if (typeof mlStore === 'undefined' || typeof mlShop === 'undefined') return;
-    const CFG = Object.assign({part: '907933120514', rec: '6109761903'}, window.mlSearch || {});
+    // каталог по домену: основной сайт → раздел «Все товары» основного проекта, иначе тест-проект
+    const MAIN = /(^|\.)moonlight-kg\.store$/.test(location.hostname);
+    const CFG = Object.assign(MAIN ? {part: '111565813801', rec: '2312254093'} : {part: '907933120514', rec: '6109761903'}, window.mlSearch || {});
     const KEY = 'ml-srch-v1', TTL = 30 * 60e3, PAGE = 24;
     const esc = mlEsc, ls = {get: k => { try { return localStorage.getItem(k); } catch (e){ return null; } }, set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e){} }};
     // ---- нормализация: регистр, ё, раскладка, транслит

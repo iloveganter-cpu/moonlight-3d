@@ -1099,10 +1099,14 @@ function extras(){
       return x;
     }
     // настройки родного блока каталога на этой странице
-    function opts(){
-      for (const s of D.scripts){ const m = s.textContent.match(/var options=\{recid:'(\d+)',storepart:'(\d+)'/); if (m) return {rec: m[1], part: m[2]}; }
-      return null;
+    // все родные блоки каталога страницы (их бывает несколько: /bloki_pitaniya — 24V и 48V)
+    function optsAll(){
+      const r = [], seen = {};
+      for (const s of D.scripts){ const re = /var options=\{recid:'(\d+)',storepart:'(\d+)'/g; let m;
+        while ((m = re.exec(s.textContent))) if (!seen[m[1]]){ seen[m[1]] = 1; r.push({rec: m[1], part: m[2]}); } }
+      return r;
     }
+    function opts(){ return optsAll()[0] || null; }
     const url = (part, rec, slice, size) => `${API}?storepartuid=${part}&recid=${rec}&getallparts=true&getpartinfo=true&getbreadcrumbs%5B%5D=parts&slice=${slice}&size=${size}`;
     // все товары раздела (с подразделами) + дерево разделов + крошки; size=1 — только сведения о разделе и первый товар
     async function load(part, rec, size){
@@ -1131,7 +1135,7 @@ function extras(){
       const ks = new Set(kids(parts, uid).map(k => k.uid));
       return x => { for (const pu of x.pu){ let c = byId[pu], g = 0; while (c && g++ < 8){ if (ks.has(c.uid)) return c.uid; c = byId[c.par]; } } return ''; };
     }
-    return {opts, load, kids, kidOf, rootOf, clean};
+    return {opts, optsAll, load, kids, kidOf, rootOf, clean};
   })();
   // ---------- каталог: панель разделов слева + выезжающая шторка, товары Тильды справа
   // страницы, которые уже собраны на тест-сайте: ссылки живого сайта ведут на них (только на *.tilda.ws)
@@ -1671,8 +1675,25 @@ function extras(){
     addEventListener('resize', () => { if (scrollY < 5) pad(); });
     if (brand === '') { location.replace('/#ml-catalog'); return; }
     // живой режим: на странице есть родной блок каталога Тильды → раздел и товары берём из каталога, блок прячем
-    const so = !brand && mlStore.opts();
-    if (so){
+    const all = brand ? [] : mlStore.optsAll(), so = all[0];
+    if (all.length > 1){
+      // несколько родных блоков: один наш блок, чипсы = разделы блоков, все родные прячем
+      const recs = all.map(o => D.getElementById('rec' + o.rec)).filter(Boolean);
+      recs.forEach(r => r.style.display = 'none');
+      Promise.all(all.map(o => mlStore.load(o.part, o.rec))).then(sts => {
+        const seen = {}, items = [], types = [];
+        sts.forEach((st, i) => { const id = all[i].part;
+          types.push({id, n: st.info.title || ('Раздел ' + (i + 1)), h: st.info.alias || ''});
+          st.items.forEach(x => { if (!seen[x.id]){ seen[x.id] = 1; x.k = id; items.push(x); } }); });
+        // заголовок — общее начало названий («Блоки питания 24» + «…48» → «Блоки питания»), иначе родитель
+        const ts = types.map(t => t.n.split(/\s+/)); let c = 0;
+        while (ts.every(w => w[c] && w[c] === ts[0][c])) c++;
+        const cr = sts[0].crumbs, par = cr.length > 1 ? cr[cr.length - 2] : null;
+        const title = c ? ts[0].slice(0, c).join(' ') : (par && par.title) || 'Каталог';
+        build({live: true, title, parent: par ? (par.title || 'Каталог') : '', parentHref: par ? par.alias : '', about: sts[0].info.description || '',
+          types: types.filter(t => items.some(x => x.k === t.id)), items});
+      }).catch(() => { recs.forEach(r => r.style.display = ''); host.innerHTML = ''; });
+    } else if (so){
       const rec = D.getElementById('rec' + so.rec); if (rec) rec.style.display = 'none';
       mlStore.load(so.part, so.rec).then(st => {
         const info = st.info, cr = st.crumbs, par = cr.length > 1 ? cr[cr.length - 2] : null;

@@ -1667,7 +1667,8 @@ function extras(){
     // страница бренда: /brand?b=eglo → rooms/brands/eglo.json (чипсы = наши разделы)
     const brand = slug === 'brand' ? (new URLSearchParams(location.search).get('b') || '').replace(/[^a-z0-9-]/g, '') : null;
     const esc = mlEsc, fmt = mlFmt, plural = mlPlural, ICO = ML_ICO, WA = ML_WA, PAGE = 24;
-    const BRAND_PRIO = [{re: /лампоч|lamposhki|lampochki/i, lead: ['geniled', 'ambrella'], tail: ['general']}];
+    const BRAND_PRIO = [{re: /лампоч|lamposhki|lampochki/i, lead: ['geniled', 'ambrella'], tail: ['general']},
+      {re: /софит|tochechnye|sofiti/i, lead: ['ambrella', 'luminair'], tail: []}];
     host.innerHTML = '<div class="mk-load">Загружаем каталог…</div>';
     const pad = () => { const h = D.querySelector('.t3113__header'); if (!h) return;
       const over = h.getBoundingClientRect().bottom - host.getBoundingClientRect().top;

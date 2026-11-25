@@ -1480,7 +1480,7 @@ function extras(){
   (function mlKranz(){
     // серии по адресу страницы: на всех страницах тест-сайта один и тот же блок <div id="ml-cat"></div>
     const SER_BY_PATH = {kranz_round: 'kranz', kranz: 'kranz', atlas_design_karbon: 'atlas', asfora_rozetki: 'asfora', artgallery: 'artgallery', totelectric: 'tot', wesa: 'wesa', 'rita-mutlusan_bk': 'rita'};
-    const cat = D.getElementById('ml-cat'), pth = location.pathname.replace(/^\/|\/$/g, '');
+    const cat = D.getElementById('ml-cat'), pth = location.pathname.replace(/^\/|\/$/g, '').replace(/^new-/, ''); // new-* — репетиция переноса
     const host = D.getElementById('ml-kranz') || D.getElementById('ml-series') || (cat && !cat.dataset.cat && SER_BY_PATH[pth] ? cat : null);
     if (!host || host.dataset.on) return; host.dataset.on = 1; host.classList.add('mk-root');
     const SID = host.id === 'ml-kranz' ? 'kranz' : host.id === 'ml-cat' ? SER_BY_PATH[pth] : (host.dataset.s || '');
@@ -1663,7 +1663,7 @@ function extras(){
   (function mlCat(){
     const host = D.getElementById('ml-cat'); if (!host || host.dataset.on) return; host.dataset.on = 1;
     host.classList.add('mk-root', 'mc-root');
-    const slug = host.dataset.cat || location.pathname.replace(/^\/|\/$/g, '');
+    const slug = host.dataset.cat || location.pathname.replace(/^\/|\/$/g, '').replace(/^new-/, ''); // new-* — репетиция переноса
     // страница бренда: /brand?b=eglo → rooms/brands/eglo.json (чипсы = наши разделы)
     const brand = slug === 'brand' ? (new URLSearchParams(location.search).get('b') || '').replace(/[^a-z0-9-]/g, '') : null;
     const esc = mlEsc, fmt = mlFmt, plural = mlPlural, ICO = ML_ICO, WA = ML_WA, PAGE = 24;

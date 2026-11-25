@@ -1501,6 +1501,9 @@ function extras(){
     // а цены/фото/ссылки берём из каталога по номеру товара; удалённых из каталога товаров в серии нет. Нет ответа — снимок как есть.
     const NAT = [...D.scripts].map(s => (s.textContent.match(/var options=\{recid:'(\d+)',storepart:'(\d+)'/) || []).slice(1)).filter(a => a.length);
     NAT.forEach(([rec]) => { const r = D.getElementById('rec' + rec); if (r) r.style.display = 'none'; });
+    // родных блоков нет → берём всю серию по разделу каталога основного сайта (API не проверяет recid; раздел отдаёт и все подразделы-цвета)
+    const SER_PART = {atlas: '303531458144', asfora: '675596691984', artgallery: '284480547584', tot: '769729352204', wesa: '769729352204', rita: '766249330052', kranz: '926680127194'};
+    if (!NAT.length && SER_PART[SID]) NAT.push(['1', SER_PART[SID]]);
     const live = (data, lives) => {
       if (lives.some(l => !l)) return data;
       const by = {}; lives.forEach(l => l.items.forEach(x => { by[x.id] = x; }));

@@ -1667,6 +1667,7 @@ function extras(){
     // страница бренда: /brand?b=eglo → rooms/brands/eglo.json (чипсы = наши разделы)
     const brand = slug === 'brand' ? (new URLSearchParams(location.search).get('b') || '').replace(/[^a-z0-9-]/g, '') : null;
     const esc = mlEsc, fmt = mlFmt, plural = mlPlural, ICO = ML_ICO, WA = ML_WA, PAGE = 24;
+    const BRAND_PRIO = [{re: /лампоч|lamposhki|lampochki/i, lead: ['geniled', 'ambrella'], tail: ['general']}];
     host.innerHTML = '<div class="mk-load">Загружаем каталог…</div>';
     const pad = () => { const h = D.querySelector('.t3113__header'); if (!h) return;
       const over = h.getBoundingClientRect().bottom - host.getBoundingClientRect().top;
@@ -1712,7 +1713,12 @@ function extras(){
       const items = data.items, byId = {}; items.forEach((x, i) => { byId[x.id] = x; x._i = i; });
       const st = {type: 'all', brand: 'all', q: '', sort: 'def', shown: PAGE};
       const brands = {}; items.forEach(x => { if (x.b) brands[x.b] = (brands[x.b] || 0) + 1; });
-      const blist = Object.keys(brands).sort((a, b) => brands[b] - brands[a]);
+      // приоритет брендов владельца: в лампочках лицо — Geniled и Ambrella, General в конец (и в чипсах, и в товарах «по умолчанию»)
+      const pr = BRAND_PRIO.find(p => p.re.test(data.title || '') || p.re.test(slug));
+      const rank = b => { if (!pr || !b) return 1; const l = b.toLowerCase(), at = arr => arr.findIndex(w => l.startsWith(w));
+        const i = at(pr.lead); if (i >= 0) return i - 100; return at(pr.tail) >= 0 ? 100 : 1; };
+      if (pr){ items.sort((a, b) => rank(a.b) - rank(b.b) || a._i - b._i); items.forEach((x, i) => { x._i = i; }); }
+      const blist = Object.keys(brands).sort((a, b) => rank(a) - rank(b) || brands[b] - brands[a]);
       const prices = items.map(x => x.p).filter(Boolean);
       // витрина героя: товары с фото и ценой, по одному от каждого бренда, потом остальные
       const show = []; blist.concat(['']).forEach(b => { const x = items.find(i => i.i && i.p && (i.b || '') === b); if (x) show.push(x); });

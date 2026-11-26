@@ -2600,8 +2600,80 @@ html.ml-spot-on input[type=text],html.ml-spot-on input[type=tel],html.ml-spot-on
 }
 
 }
+// ===== Аналитика GA4: G-0P7ZSL3FY9 + цели (вклеивается в rooms.js через build_rooms.py) =====
+// gtag.js уже грузится из HEAD (тег Google Ads AW-…); тут только добавляем ресурс GA4 и события.
+// Проверка: ?ml_ga_debug в адресе → события пишутся в консоль и видны в GA «DebugView».
+function mlAnalytics(){
+  if (window.__mlGa) return; window.__mlGa = 1;
+  const GA = 'G-0P7ZSL3FY9';
+  const DBG = /ml_ga_debug/.test(location.search);
+  window.dataLayer = window.dataLayer || [];
+  if (typeof window.gtag !== 'function'){
+    window.gtag = function(){ dataLayer.push(arguments); };
+    gtag('js', new Date());
+    const s = document.createElement('script'); s.async = true; s.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA; document.head.appendChild(s);
+  }
+  gtag('config', GA, DBG ? {debug_mode: true} : {});
+  const ev = (name, p) => { p = p || {}; if (DBG){ p.debug_mode = true; console.log('[ml-ga]', name, p); } try { gtag('event', name, Object.assign({send_to: GA}, p)); } catch(e){} };
+  window.mlTrack = ev;
+  const once = {}; const evOnce = (name, p) => { if (!once[name]){ once[name] = 1; ev(name, p); } };
+
+  // где на странице нажали
+  const PLACES = [['.ml-pp-on', 'product'], ['.t-store__prod-popup,.t-catalog__product-popup', 'product'], ['.ml-tp-bar', 'product_bar'], ['#ml-rooms', 'rooms'],
+    ['.ml-cat', 'catalog'], ['.t706,.t706__cartwin', 'cart'], ['.t3113,.t228,.t450,header', 'header'], ['footer,.t-footer,.t718', 'footer']];
+  const place = el => { for (const [s, n] of PLACES) if (el.closest(s)) return n; return 'page'; };
+  const prodName = el => { const c = el.closest('.ml-pp-on,.t-store__prod-popup,.t-catalog__product-popup,.t-store__card,.t-catalog__card,.t-store__prod-snippet__container');
+    const t = c && c.querySelector('.js-store-prod-name,.t-store__prod-popup__name,.t-name'); return t ? t.textContent.trim().slice(0, 100) : ''; };
+
+  document.addEventListener('click', e => {
+    const a = e.target.closest && e.target.closest('a,button,[role=button],.ml3d-btn,.ml-pp-room');
+    if (!a) return;
+    const href = (a.getAttribute('href') || '').toLowerCase();
+    if (/wa\.me|whatsapp/.test(href)) return ev('whatsapp_click', {place: place(a), item_name: prodName(a), page_path: location.pathname});
+    if (href.startsWith('tel:')) return ev('phone_click', {place: place(a), page_path: location.pathname});
+    if (/t\.me\/|telegram/.test(href)) return ev('telegram_click', {place: place(a)});
+    if (/instagram\.com/.test(href)) return ev('instagram_click', {place: place(a)});
+    if (/2gis\.|go\.2gis|maps\.google|yandex\.[a-z]+\/maps/.test(href)) return ev('map_click', {place: place(a)});
+    if (a.classList.contains('ml3d-btn') || a.closest('.ml3d-btn')) return ev('view_3d', {item_name: prodName(a) || document.title, page_path: location.pathname});
+    if (a.classList.contains('ml-pp-room')) return ev('view_in_room', {item_name: prodName(a)});
+  }, true);
+
+  // живые комнаты: первое касание виджета за визит страницы
+  document.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('#ml-rooms')) evOnce('rooms_use', {page_path: location.pathname}); }, true);
+
+  // корзина Тильды: оборачиваем её функции, когда они появятся (скрипт корзины грузится сам по себе)
+  const wrap = (fn, cb) => { const f = window[fn]; if (typeof f !== 'function' || f.__mlGa) return !!(f && f.__mlGa);
+    const w = function(){ try { cb.apply(this, arguments); } catch(e){} return f.apply(this, arguments); }; w.__mlGa = 1; window[fn] = w; return true; };
+  const num = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[^\d.,]/g, '').replace(',', '.')); return isNaN(n) ? 0 : n; };
+  let tries = 0;
+  const hook = () => {
+    const a = wrap('tcart__addProduct', p => { p = p || {}; const price = num(p.price), q = +p.quantity || 1;
+      ev('add_to_cart', {currency: 'KGS', value: price * q, items: [{item_name: String(p.name || '').slice(0, 100), item_id: p.sku || p.uid || '', price, quantity: q}]}); });
+    const o = wrap('tcart__openCart', () => ev('view_cart', {}));
+    if (!(a && o) && ++tries < 40) setTimeout(hook, 1500);
+  };
+  hook();
+
+  // отправка форм: заказ из корзины / «КП…» (заказ с именем на КП) / прочие формы
+  let lastName = '', lastTotal = 0;
+  const formKind = f => f.closest('.t706') ? (/^\s*кп/i.test(lastName) ? 'kp' : 'order') : 'form';
+  document.addEventListener('submit', e => { const f = e.target; const n = f.querySelector && f.querySelector('input[name="name" i],input[name="Name"]'); lastName = n ? n.value : '';
+    const t = document.querySelector('.t706__cartwin-prodamount, .t706__cartpage-prodamount'); lastTotal = t ? num(t.textContent) : 0; }, true);
+  const sent = new WeakSet();
+  const done = e => { const f = e.target; if (!f || !f.closest || sent.has(f)) return; sent.add(f); setTimeout(() => sent.delete(f), 3000);
+    const n = f.querySelector('input[name="name" i],input[name="Name"]'); if (n && n.value) lastName = n.value;
+    const k = formKind(f);
+    if (k === 'kp') ev('kp_request', {page_path: location.pathname});
+    else if (k === 'order') ev('order_sent', {currency: 'KGS', value: lastTotal});
+    else ev('form_sent', {form_id: f.id || (f.closest('.r') || {}).id || '', page_path: location.pathname});
+  };
+  document.addEventListener('tildaform:aftersuccess', done, true);
+  if (window.jQuery) try { jQuery(document).on('tildaform:aftersuccess', 'form', done); } catch(e){}
+}
+
 const only = SCRIPT && SCRIPT.dataset.only, has = k => !only || only.split(',').includes(k);
 const go = () => {
+  try { mlAnalytics(); } catch(e){}
   if (has('rooms')) rooms();
   if (has('extras') && !(SCRIPT && SCRIPT.dataset.extras === 'off')) extras();
   const CUR = (window.mlStudioCfg || {}).cursor || (SCRIPT && SCRIPT.dataset.cursor);

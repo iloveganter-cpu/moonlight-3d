@@ -43,7 +43,15 @@
     "display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box}",
     ".ml3d-card{position:relative;width:min(960px,100%);height:min(760px,100%);background:#fff;",
     "border-radius:8px;overflow:hidden;display:flex;flex-direction:column}",
-    ".ml3d-card model-viewer{flex:1;width:100%;min-height:0;background:#fff;--poster-color:#fff}",
+    ".ml3d-card model-viewer{position:absolute;inset:0;width:100%;height:100%;background:transparent;--poster-color:transparent}",
+    ".ml3d-stage{flex:1;min-height:0;position:relative;transition:background .3s}",
+    ".ml3d-bg-grey{background:radial-gradient(ellipse at 50% 38%,#eef1f4 0%,#c7ced6 65%,#aab3bd 100%)}",
+    ".ml3d-bg-light{background:radial-gradient(ellipse at 50% 38%,#fff 0%,#f1f2f4 60%,#e2e5e9 100%)}",
+    ".ml3d-bg-dark{background:radial-gradient(ellipse at 50% 38%,#50585f 0%,#2f3438 60%,#222629 100%)}",
+    ".ml3d-bgs{position:absolute;left:12px;top:12px;z-index:2;display:flex;gap:8px;padding:6px;",
+    "border-radius:20px;background:rgba(255,255,255,.75)}",
+    ".ml3d-bgs button{width:24px;height:24px;border-radius:50%;border:2px solid rgba(0,0,0,.15);padding:0;cursor:pointer}",
+    ".ml3d-bgs button.on{border-color:#000}",
     ".ml3d-bar{display:flex;justify-content:space-between;gap:12px;padding:12px 16px;",
     "border-top:1px solid #eee;font:13px/1.4 Arial,sans-serif;color:#555}",
     ".ml3d-bar b{color:#000}",
@@ -95,6 +103,40 @@
     window.removeEventListener("keydown", onKey, true);
   }
 
+  // Backgrounds: white shades vanish on white, so the default is a soft
+  // grey-blue studio gradient; the viewer can switch and the choice is kept.
+  var BGS = [["light", "#f6f7f8", "Светлый фон", 1.1], ["grey", "#c7ced6", "Серый фон", 1.1],
+             ["dark", "#2f3438", "Тёмный фон", 1.25]];
+
+  function setupBackgrounds(overlay, viewer) {
+    var stage = overlay.querySelector(".ml3d-stage"), box = overlay.querySelector(".ml3d-bgs");
+    var cur = "grey";
+    try { cur = localStorage.getItem("ml3d-bg") || cur; } catch (e) {}
+    function apply(name) {
+      BGS.forEach(function (b) {
+        if (b[0] !== name) return;
+        stage.className = "ml3d-stage ml3d-bg-" + name;
+        viewer.setAttribute("exposure", b[3]);
+      });
+      [].forEach.call(box.children, function (btn) {
+        btn.classList.toggle("on", btn.getAttribute("data-bg") === name);
+      });
+      try { localStorage.setItem("ml3d-bg", name); } catch (e) {}
+    }
+    BGS.forEach(function (b) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.setAttribute("data-bg", b[0]);
+      btn.setAttribute("aria-label", b[2]);
+      btn.title = b[2];
+      btn.style.background = b[1];
+      btn.addEventListener("click", function () { apply(b[0]); });
+      box.appendChild(btn);
+    });
+    if (!BGS.some(function (b) { return b[0] === cur; })) cur = "grey";
+    apply(cur);
+  }
+
   function open(model) {
     close();
     overlay = document.createElement("div");
@@ -103,15 +145,17 @@
       '<div class="ml3d-card" role="dialog" aria-label="3D-модель">' +
       '<div class="ml3d-progress"></div>' +
       '<button class="ml3d-close" type="button" aria-label="Закрыть">×</button>' +
-      '<model-viewer loading="eager" camera-controls auto-rotate auto-rotate-delay="1500" ' +
+      '<div class="ml3d-bgs" aria-label="Фон"></div>' +
+      '<div class="ml3d-stage"><model-viewer loading="eager" camera-controls auto-rotate auto-rotate-delay="1500" ' +
       'rotation-per-second="20deg" interaction-prompt="none" shadow-intensity="0.6" ' +
       'environment-image="neutral" exposure="1.1" touch-action="pan-y" ' +
       'camera-orbit="0deg 92deg auto" min-camera-orbit="auto 20deg auto" ' +
-      'max-camera-orbit="auto 160deg auto"></model-viewer>' +
+      'max-camera-orbit="auto 160deg auto"></model-viewer></div>' +
       '<div class="ml3d-bar"><span><b></b></span>' +
       '<span class="ml3d-hint">Вращайте мышкой или пальцем, колёсико / два пальца — приблизить</span>' +
       "</div></div>";
     var viewer = overlay.querySelector("model-viewer");
+    setupBackgrounds(overlay, viewer);
     viewer.setAttribute("alt", model.title || "3D-модель товара");
     viewer.setAttribute("poster", asset(model.poster));
     // Optional per-model start view, e.g. sconces a little from the side.

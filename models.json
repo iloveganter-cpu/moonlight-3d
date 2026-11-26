@@ -55,5 +55,68 @@
     "glb": "LH31115/LH31115.glb",
     "poster": "LH31115/poster.webp",
     "orbit": "30deg 85deg auto"
+  },
+  "719814628364": {
+    "title": "Ambrella LH55104",
+    "size": "Ø650 × 225 мм, подвес до 1080 мм",
+    "glb": "LH55104/LH55104.glb",
+    "poster": "LH55104/poster.webp",
+    "orbit": "0deg 85deg auto"
+  },
+  "175039073674": {
+    "title": "Ambrella LH55114",
+    "size": "Ø650 × 225 мм, подвес до 1080 мм",
+    "glb": "LH55114/LH55114.glb",
+    "poster": "LH55114/poster.webp",
+    "orbit": "0deg 85deg auto"
+  },
+  "831133165994": {
+    "title": "Ambrella FL51725",
+    "size": "Ø645 × 135 мм",
+    "glb": "FL51725/FL51725.glb",
+    "poster": "FL51725/poster.webp",
+    "orbit": "20deg 112deg auto"
+  },
+  "688197422234": {
+    "title": "Ambrella FL51751",
+    "size": "720 × 720 × 245 мм",
+    "glb": "FL51751/FL51751.glb",
+    "poster": "FL51751/poster.webp",
+    "orbit": "20deg 110deg auto"
+  },
+  "110513199614": {
+    "title": "Ambrella FL51752",
+    "size": "720 × 720 × 245 мм",
+    "glb": "FL51752/FL51752.glb",
+    "poster": "FL51752/poster.webp",
+    "orbit": "20deg 110deg auto"
+  },
+  "190800477414": {
+    "title": "Ambrella FL51755",
+    "size": "870 × 570 × 110 мм",
+    "glb": "FL51755/FL51755.glb",
+    "poster": "FL51755/poster.webp",
+    "orbit": "20deg 112deg auto"
+  },
+  "320206909684": {
+    "title": "Ambrella FL51756",
+    "size": "870 × 570 × 110 мм",
+    "glb": "FL51756/FL51756.glb",
+    "poster": "FL51756/poster.webp",
+    "orbit": "20deg 112deg auto"
+  },
+  "403362778964": {
+    "title": "Ambrella FL51759",
+    "size": "870 × 870 × 95 мм",
+    "glb": "FL51759/FL51759.glb",
+    "poster": "FL51759/poster.webp",
+    "orbit": "20deg 112deg auto"
+  },
+  "314383420184": {
+    "title": "Ambrella FL51760",
+    "size": "870 × 870 × 95 мм",
+    "glb": "FL51760/FL51760.glb",
+    "poster": "FL51760/poster.webp",
+    "orbit": "20deg 112deg auto"
   }
 }

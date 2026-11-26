@@ -192,11 +192,41 @@
     slider.appendChild(tools);
   }
 
+  // Our own catalogue (cat.js / shop.js) reuses one popup, .mk-pop-card,
+  // and swaps its data-id and content for each product.
+  function decorateMk(card) {
+    var id = card.getAttribute("data-id");
+    var old = card.querySelector(".ml3d-tools");
+    if (old && old.getAttribute("data-for") === id) return;
+    if (old) old.parentNode.removeChild(old);
+    var model = models[id];
+    var holder = card.querySelector(".mk-pop-img");
+    if (!model || !holder) return;
+    if (getComputedStyle(holder).position === "static") holder.style.position = "relative";
+    var tools = document.createElement("div");
+    tools.className = "ml3d-tools";
+    tools.setAttribute("data-for", id);
+    var button = document.createElement("button");
+    button.type = "button";
+    button.className = "ml3d-btn";
+    button.innerHTML = ICON + "<span>3D-модель</span>";
+    button.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      open(model);
+    });
+    tools.appendChild(button);
+    if (model.zip) tools.appendChild(downloadLink(model, "button"));
+    holder.appendChild(tools);
+  }
+
   var queued = false;
   function scan() {
     queued = false;
     var cards = document.querySelectorAll(CARD_SELECTOR);
     for (var i = 0; i < cards.length; i++) decorate(cards[i]);
+    var pops = document.querySelectorAll(".mk-pop-card[data-id]");
+    for (var j = 0; j < pops.length; j++) decorateMk(pops[j]);
   }
 
   function start(map) {
@@ -209,7 +239,8 @@
         queued = true;
         setTimeout(scan, 50);   // not rAF: it never fires in a hidden tab
       }
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(document.body, { childList: true, subtree: true,
+                               attributes: true, attributeFilter: ["data-id"] });
   }
 
   function init() {

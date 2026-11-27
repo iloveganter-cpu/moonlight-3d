@@ -2371,7 +2371,17 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
   }
   // системный курсор: та же звезда/форма, те же цвета и сияние, 32×32 (больше Chrome у краёв окна не показывает)
   const curCss = D.createElement('style'); D.head.appendChild(curCss);
-  function curSvg(isLink){
+  // кадр ставится inline только элементу под мышью: смена чего-либо на <html> пересчитывает всю страницу (~40 мс в каталоге),
+  // а один элемент — 0,1–0,6 мс. Ссылки, поля ввода, скрытый режим, панель Студии — по общим правилам.
+  const NFR = 12; let FR = [], curIdx = 0, curAt = 0, curEl = null, curShown = '';
+  function setFrame(i){ if (!FR[i]) return; curIdx = i; paintEl(); }
+  function paintEl(){
+    const el = lastEl, want = el && el.nodeType === 1 && el.isConnected && !opt.off && !root.classList.contains('ml-star-hide') && !(el.closest && el.closest(LINK + ',.mls-host')) ? el : null;
+    if (curEl && curEl !== want){ curEl.style.removeProperty('cursor'); curShown = ''; }
+    curEl = want; if (!want || curShown === FR[curIdx]) return;
+    curShown = FR[curIdx]; want.style.setProperty('cursor', curShown, 'important');
+  }
+  function curSvg(isLink, rot0){
     const C = 'rgb(' + rgb() + ')', g = 'rgb(' + cvar('--mlc-graphite', '#2F3438') + ')', outline = opt.shape === 'ring';
     let fill, stroke;
     if (opt.color === 'mono'){ fill = dark ? '#fff' : g; stroke = dark ? 'rgba(255,255,255,.35)' : '#fff'; }
@@ -2381,13 +2391,16 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     const L = isLink && opt.link, k = Math.min(1.22, Math.min(1.08, opt.size) * (L ? 1.2 : 1));
     const sw = (outline ? 2.2 : dark ? 1.2 : 1.4) / k, h = opt.halo;
     const flt = h ? `<filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${((dark ? 1.7 : 1.3) * h).toFixed(2)}" flood-color="${C}" flood-opacity="${dark ? .95 : .7}"/></filter>` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">${flt}<path d="${SHAPES[opt.shape]}" transform="rotate(${L ? 45 : 0}) scale(${k.toFixed(3)})" fill="${fill}" stroke="${stroke}" stroke-width="${sw.toFixed(2)}" stroke-linejoin="round"${h ? ' filter="url(#g)"' : ''}/></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">${flt}<path d="${SHAPES[opt.shape]}" transform="rotate(${L ? 45 : rot0 || 0}) scale(${k.toFixed(3)})" fill="${fill}" stroke="${stroke}" stroke-width="${sw.toFixed(2)}" stroke-linejoin="round"${h ? ' filter="url(#g)"' : ''}/></svg>`;
   }
   function curRule(){
     if (opt.off){ curCss.textContent = ''; return; }
-    const u = l => `url("data:image/svg+xml,${encodeURIComponent(curSvg(l))}") 16 16,auto`, N = u(false), K = u(true), Ls = ':is(' + LINK + ')';
+    const u = (l, a) => `url("data:image/svg+xml,${encodeURIComponent(curSvg(l, a))}") 16 16,auto`, K = u(true), Ls = ':is(' + LINK + ')';
+    // вращение: кадры звезды через каждые 7,5° (у 4-лучевой звезды период 90°), скрипт только переключает --ml-cur
+    FR = []; for (let i = 0; i < NFR; i++) FR.push(u(false, i * 90 / NFR));
+    curShown = ''; paintEl();
     // ползунки — отдельными правилами (иначе Chrome выкидывает весь список)
-    curCss.textContent = `html.ml-star-on,html.ml-star-on *{cursor:${N}!important}
+    curCss.textContent = `html.ml-star-on,html.ml-star-on *{cursor:${FR[0]}!important}
 html.ml-star-on *::-webkit-slider-thumb{cursor:${K}!important}
 html.ml-star-on *::-moz-range-thumb{cursor:${K}!important}
 html.ml-star-on ${Ls},html.ml-star-on ${Ls} *{cursor:${K}!important}
@@ -2439,10 +2452,10 @@ html.ml-star-on .mls-host,html.ml-star-on .mls-host *{cursor:auto!important}`;
     mx = e.clientX; my = e.clientY;
     if (!seen){ seen = true; px = sx = mx; py = sy = my; root.classList.add('ml-star-in'); probe(); }
     // замеры элемента (getComputedStyle/getBoundingClientRect) — только когда сменился элемент под мышью, а не на каждое движение
-    if (e.target !== lastEl){ lastEl = e.target; target(e.target); }
+    if (e.target !== lastEl){ lastEl = e.target; target(e.target); paintEl(); }
   }, {passive:true});
   addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') clickAt = performance.now(); });
-  addEventListener('scroll', () => { lastProbe = 0; if (seen) target(D.elementFromPoint(mx, my)); }, {passive:true});
+  addEventListener('scroll', () => { lastProbe = 0; if (seen){ lastEl = D.elementFromPoint(mx, my); target(lastEl); paintEl(); } }, {passive:true});
   D.addEventListener('mouseleave', () => { root.classList.remove('ml-star-in'); target(null); });
   D.addEventListener('mouseenter', () => { if (seen) root.classList.add('ml-star-in'); });
   D.addEventListener('mls-apply', () => { readOpts(); paint(); lastEl = null; if (seen){ probe(); target(D.elementFromPoint(mx, my)); } });
@@ -2468,6 +2481,8 @@ html.ml-star-on .mls-host,html.ml-star-on .mls-host *{cursor:auto!important}`;
     const tgt = link && opt.link ? 45 : 0;
     if (!RM){ if (opt.spin === 'spin') ang += 1.4; else if (opt.spin === 'still') ang = lerp(ang, Math.round(ang / 90) * 90 + tgt, .15);
       else ang += vx * .6 + (tgt ? (45 - ((ang % 90) + 90) % 90) * .12 : 0); }
+    // кадр системного курсора по углу (не чаще ~40 раз/с — смена кадра пересчитывает стили страницы)
+    if (t - curAt > 24){ curAt = t; const i = Math.round((((ang % 90) + 90) % 90) / (90 / NFR)) % NFR; if (i !== curIdx) setFrame(i); }
     const grow = (link && opt.link ? 1.6 : 1) * (btn && opt.btn === 'magnet' ? 1.5 : 1) * (btn && opt.btn === 'none' ? 1.3 : 1);
     sc = lerp(sc, grow, K || .15);
     // кнопку под курсором убрали из страницы (перерисовка) — берём то, что теперь под курсором

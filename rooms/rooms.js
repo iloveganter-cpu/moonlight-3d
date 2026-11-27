@@ -1122,8 +1122,28 @@ function extras(){
       walk(first.parts);
       const parts = flat.filter(p => !p.hideonpublic).map(p => ({uid: String(p.uid), t: p.title, h: p.alias || '', img: p.img || '',
         d: p.description || '', par: String(p.parentuid || ''), root: !!p.root, sort: +p.sort || 0}));
-      return {info: first.partinfo || {}, crumbs: first.breadcrumbs || [], parts, total: first.total || items.length, items};
+      // Тильда отдаёт в разделе только товары, привязанные к нему самому или к подразделу «через родителя»:
+      // подраздел, чьи товары привязаны лишь к нему (так «TOT Electric кашемир» в «Розетки TOT/WESA»), в ответ не попадает.
+      // Такие пустые подразделы догружаем отдельно (кроме корня «Все» — он и так отдаёт всё).
+      const me = parts.find(p => p.uid === String(part));
+      if (size >= 500 && me && !me.root){
+        const under = uid => { for (let c = parts.find(p => p.uid === uid), g = 0; c && g++ < 8; c = parts.find(p => p.uid === c.par)) if (c.par === me.uid) return true; return false; };
+        const has = new Set(); items.forEach(x => x.pu.forEach(u => has.add(u)));
+        const miss = parts.filter(p => under(p.uid) && !has.has(p.uid) && !parts.some(q => q.par === p.uid));
+        const seen = new Set(items.map(x => x.id));
+        const extra = await Promise.all(miss.map(p => load.one(p.uid, rec).catch(() => [])));
+        extra.forEach(arr => arr.forEach(x => { if (!seen.has(x.id)){ seen.add(x.id); items.push(x); } }));
+      }
+      return {info: first.partinfo || {}, crumbs: first.breadcrumbs || [], parts, total: Math.max(first.total || 0, items.length), items};
     }
+    // только товары одного раздела, без дерева (для догрузки пропавших подразделов)
+    load.one = async (part, rec) => { const out = [];
+      for (let slice = 1, guard = 0; guard < 20; guard++){
+        const r = await fetch(url(part, rec, slice, 500)); if (!r.ok) throw new Error('store ' + r.status);
+        const j = await r.json(); (j.products || []).forEach(p => out.push(item(p)));
+        if (!j.nextslice || j.nextslice == slice) break; slice = j.nextslice;
+      }
+      return out; };
     // прямые подразделы раздела по порядку из Тильды
     // (у разделов верхнего уровня parentuid пустой — они дети корня «Все»)
     const kids = (parts, uid) => { uid = String(uid); const r = parts.find(p => p.root), isRoot = !parts.some(p => p.uid === uid) || (r && r.uid === uid);

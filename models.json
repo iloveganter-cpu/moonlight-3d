@@ -419,5 +419,47 @@
     "glb": "LH57095/LH57095.glb",
     "poster": "LH57095/poster.webp",
     "orbit": "-35deg 85deg auto"
+  },
+  "130486098792": {
+    "title": "Ambrella TN51614",
+    "size": "58 × 82 × 195 мм",
+    "glb": "TN51614/TN51614.glb",
+    "poster": "TN51614/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "625646413042": {
+    "title": "Ambrella FW245/2",
+    "size": "61 × 80 × 155 мм",
+    "glb": "FW245_2/FW245_2.glb",
+    "poster": "FW245_2/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "532108304022": {
+    "title": "Ambrella FW246/2",
+    "size": "61 × 80 × 155 мм",
+    "glb": "FW246_2/FW246_2.glb",
+    "poster": "FW246_2/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "561606707142": {
+    "title": "Ambrella FW2474",
+    "size": "60 × 90 × 155 мм",
+    "glb": "FW2474/FW2474.glb",
+    "poster": "FW2474/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "962643680192": {
+    "title": "Ambrella FW2475",
+    "size": "60 × 90 × 155 мм",
+    "glb": "FW2475/FW2475.glb",
+    "poster": "FW2475/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "685933599004": {
+    "title": "Ambrella FW2466",
+    "size": "105 × 150 × 185 мм",
+    "glb": "FW2466/FW2466.glb",
+    "poster": "FW2466/poster.webp",
+    "orbit": "-35deg 85deg auto"
   }
 }

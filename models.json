@@ -363,5 +363,19 @@
     "glb": "LH72475/LH72475.glb",
     "poster": "LH72475/poster.webp",
     "orbit": "-35deg 85deg auto"
+  },
+  "339572012294": {
+    "title": "Ambrella LH55204",
+    "size": "150 × 80 × 280 мм",
+    "glb": "LH55204/LH55204.glb",
+    "poster": "LH55204/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "848687228364": {
+    "title": "Ambrella LH55206",
+    "size": "330 × 170 × 280 мм",
+    "glb": "LH55206/LH55206.glb",
+    "poster": "LH55206/poster.webp",
+    "orbit": "-35deg 85deg auto"
   }
 }

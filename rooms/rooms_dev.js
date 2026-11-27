@@ -325,7 +325,7 @@ function k2rgb(K){const t=K/100;let r,g,b;
 
 function rooms(){
   const host = document.getElementById('ml-rooms'); if (!host) return;
-  host.innerHTML = "<div class=\"ml-wrap\">\n  <div class=\"ml-hd\"><h2 data-mlt=\"rooms.title\">Включите свет в комнате</h2>\n  <p data-mlt=\"rooms.text\">Ваши комнаты со светильниками из нашего каталога. Включайте каждый светильник, меняйте яркость и цвет света от тёплого 2700&nbsp;K до&nbsp;холодного 6500&nbsp;K.</p></div>\n  <div class=\"lr\" id=\"lr\" aria-label=\"Живая комната: интерактивный свет\">\n    <div class=\"lr-view\">\n      <div class=\"lr-frame\" id=\"lrFrame\">\n        <canvas id=\"lrCv\" aria-label=\"Комната с выбранным светом\"></canvas>\n        <div class=\"lr-loading\" id=\"lrLoading\">Загружаю комнату…</div>\n        <div class=\"lr-tag\" id=\"lrTag\"><b>Вечер</b> · 2700 K</div>\n      </div>\n      <div class=\"lr-k\">\n        <div class=\"lr-krow\"><div class=\"lr-kval\" id=\"kval\">2700 K<small>тёплый</small></div><div class=\"lr-chips\" id=\"lrK\"></div></div>\n        <input id=\"mlK\" class=\"kt\" type=\"range\" min=\"2700\" max=\"6500\" step=\"50\" value=\"2700\" aria-label=\"Цветовая температура, К\">\n        <div class=\"lr-scale\"><span>2700 K</span><span>4000 K</span><span>6500 K</span></div>\n      </div>\n    </div>\n    <div class=\"lr-panel\">\n      <div class=\"lr-rooms\" id=\"lrRooms\" role=\"tablist\" aria-label=\"Комната\"></div>\n      <div class=\"lr-seg\" role=\"radiogroup\" aria-label=\"Время суток\">\n        <button type=\"button\" id=\"lrNight\" role=\"radio\" class=\"on\" aria-checked=\"true\">Вечер</button>\n        <button type=\"button\" id=\"lrDay\" role=\"radio\" aria-checked=\"false\">День</button>\n      </div>\n      <div class=\"lr-lbl\">Сценарии</div>\n      <div class=\"lr-chips lr-scenes\" id=\"lrScenes\"></div>\n      <div class=\"lr-lbl\">Светильники</div>\n      <div class=\"lr-list\" id=\"lrList\"></div>\n    </div>\n  </div>\n  <p class=\"lr-note\" id=\"lrNote\"></p>\n  <div class=\"ml-cta\"><a class=\"ml-btn\" href=\"https://wa.me/996998899675?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%9F%D0%BE%D0%BC%D0%BE%D0%B3%D0%B8%D1%82%D0%B5%20%D0%BF%D0%BE%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%B5%D1%82%20%D0%B4%D0%BB%D1%8F%20%D0%BA%D0%BE%D0%BC%D0%BD%D0%B0%D1%82%D1%8B\" target=\"_blank\" rel=\"noopener\" data-mlt=\"rooms.cta\">Подобрать свет для моей комнаты</a></div>\n</div>";
+  host.innerHTML = "<div class=\"ml-wrap\">\n  <div class=\"ml-hd\"><h2 data-mlt=\"rooms.title\">Включите свет в комнате</h2>\n  <p data-mlt=\"rooms.text\">Ваши комнаты со светильниками из нашего каталога. Включайте каждый светильник, меняйте яркость и цвет света от тёплого 2700&nbsp;K до&nbsp;холодного 6500&nbsp;K.</p></div>\n  <div class=\"lr\" id=\"lr\" aria-label=\"Живая комната: интерактивный свет\">\n    <div class=\"lr-view\">\n      <div class=\"lr-frame\" id=\"lrFrame\">\n        <canvas id=\"lrCv\" aria-label=\"Комната с выбранным светом\"></canvas>\n        <div class=\"lr-loading\" id=\"lrLoading\">Загружаю комнату…</div>\n        <div class=\"lr-tag\" id=\"lrTag\"><b>Вечер</b> · 2700 K</div>\n      </div>\n      <div class=\"lr-k\">\n        <div class=\"lr-krow\"><div class=\"lr-kval\" id=\"kval\">2700 K<small>тёплый</small></div><div class=\"lr-chips\" id=\"lrK\"></div></div>\n        <input id=\"mlK\" class=\"kt\" type=\"range\" min=\"2700\" max=\"6500\" step=\"50\" value=\"2700\" aria-label=\"Цветовая температура, К\">\n        <div class=\"lr-scale\"><span>2700 K</span><span>4000 K</span><span>6500 K</span></div>\n      </div>\n    </div>\n    <div class=\"lr-panel\">\n      <div class=\"lr-rooms\" id=\"lrRooms\" role=\"tablist\" aria-label=\"Комната\"></div>\n      <div class=\"lr-seg\" role=\"radiogroup\" aria-label=\"Время суток\">\n        <button type=\"button\" id=\"lrNight\" role=\"radio\" class=\"on\" aria-checked=\"true\">Вечер</button>\n        <button type=\"button\" id=\"lrDay\" role=\"radio\" aria-checked=\"false\">День</button>\n      </div>\n      <div class=\"lr-lbl\">Сценарии</div>\n      <div class=\"lr-chips lr-scenes\" id=\"lrScenes\"></div>\n      <div class=\"lr-lbl\">Светильники</div>\n      <div class=\"lr-list\" id=\"lrList\"></div>\n    </div>\n  </div>\n  <p class=\"lr-note\" id=\"lrNote\"></p>\n  <div class=\"ml-cta\"><a class=\"ml-btn\" href=\"https://wa.me/996500037733?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%9F%D0%BE%D0%BC%D0%BE%D0%B3%D0%B8%D1%82%D0%B5%20%D0%BF%D0%BE%D0%B4%D0%BE%D0%B1%D1%80%D0%B0%D1%82%D1%8C%20%D1%81%D0%B2%D0%B5%D1%82%20%D0%B4%D0%BB%D1%8F%20%D0%BA%D0%BE%D0%BC%D0%BD%D0%B0%D1%82%D1%8B\" target=\"_blank\" rel=\"noopener\" data-mlt=\"rooms.cta\">Подобрать свет для моей комнаты</a></div>\n</div>";
 // ---------- Живая комната (relighting: отрендеренные проходы складываются в WebGL). Три комнаты.
 (() => {
 const ROOMS = {
@@ -969,7 +969,7 @@ function extras(){
     if ((!hLvl || !mHost) && n < 60) setTimeout(() => hLogo(n + 1), 250);
   })(0);
   // ---------- общие карточка товара, корзина и окно товара (страницы категорий и каталог на главной)
-  const ML_WA = '996998899675';
+  const ML_WA = '996500037733';
   const mlEsc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
   const mlFmt = n => n.toLocaleString('ru-RU').replace(/ /g, ' ');
   const mlPlural = (n, a, b, c) => { n = Math.abs(n) % 100; const d = n % 10; return n > 10 && n < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
@@ -1194,7 +1194,7 @@ function extras(){
     };
     const brandsItem = brands.length ? {name: 'Бренды', icon: 4, n: brands.length + ' брендов', body: brandsBody(null)} : null;
     if (brandsItem) items.push(brandsItem);
-    const WA = 'https://wa.me/996998899675?text=' + encodeURIComponent('Здравствуйте! Помогите подобрать светильник');
+    const WA = 'https://wa.me/996500037733?text=' + encodeURIComponent('Здравствуйте! Помогите подобрать светильник');
 
     const box = D.createElement('div'); box.className = 'ml-cat';
     box.innerHTML = `<button type="button" class="ml-cat-open" aria-expanded="false">${ico(4)}<span>Каталог товаров</span><b aria-hidden="true">☰</b></button>
@@ -1241,7 +1241,7 @@ function extras(){
     function extraTiles(){
       const br = items[items.length - 1] || {}, logos = [...String(br.body || '').matchAll(/<img[^>]+src="([^"]+)"/g)].slice(0, 4).map(m => `<i><img src="${m[1]}" alt="" loading="lazy"></i>`).join('');
       return (br.name !== 'Бренды' ? '' : `<button type="button" class="mk-card ml-hc-x ml-hc-br"><div class="mk-img"><div class="ml-hc-logos">${logos}</div></div><h3>Бренды<i aria-hidden="true">→</i></h3><div class="mk-sku">${esc(String(br.n || ''))}</div></button>`)
-        + `<a class="mk-card ml-hc-x ml-hc-wa" href="https://wa.me/996998899675?text=${encodeURIComponent('Здравствуйте! Помогите подобрать свет')}" target="_blank" rel="noopener"><div class="mk-img"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg></div><h3><span data-mlt="cat.help1">Не нашли нужное?</span><i aria-hidden="true">↗</i></h3><div class="mk-sku" data-mlt="cat.wa">Подберём свет в WhatsApp</div></a>`;
+        + `<a class="mk-card ml-hc-x ml-hc-wa" href="https://wa.me/996500037733?text=${encodeURIComponent('Здравствуйте! Помогите подобрать свет')}" target="_blank" rel="noopener"><div class="mk-img"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2c-1.5 0-3-.4-4.3-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.3.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.3-.9.9-.9 2.2s.9 2.5 1 2.7c.1.2 1.8 2.8 4.4 3.9 1.6.7 2.3.8 3.1.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1.1.2-1.2-.1-.1-.2-.2-.5-.3Z"/></svg></div><h3><span data-mlt="cat.help1">Не нашли нужное?</span><i aria-hidden="true">↗</i></h3><div class="mk-sku" data-mlt="cat.wa">Подберём свет в WhatsApp</div></a>`;
     }
     function draw(again){
       const d = cache[curSlug], list = d.items, part = list.slice(0, shown);
@@ -1390,7 +1390,7 @@ function extras(){
     }
     // кнопки: WhatsApp и «в интерьере»
     const room = ML_IN_ROOM.find(r => r[0].test(name));
-    const wa = 'https://wa.me/996998899675?text=' + encodeURIComponent(`Здравствуйте! Интересует ${name}${sku ? ' (арт. ' + sku + ')' : ''}\n${location.href}`);
+    const wa = 'https://wa.me/996500037733?text=' + encodeURIComponent(`Здравствуйте! Интересует ${name}${sku ? ' (арт. ' + sku + ')' : ''}\n${location.href}`);
     const acts = D.createElement('div'); acts.className = 'ml-pp ml-pp-acts';
     const roomInner = room ? `${PP_ICO.room}<span>Посмотреть в интерьере<small>${room[3]} · включим только его</small></span>` : '';
     acts.innerHTML = (room ? (D.getElementById('ml-rooms') ? `<button type="button" class="ml-pp-room">${roomInner}</button>`
@@ -1454,7 +1454,7 @@ function extras(){
       bar.innerHTML = `<a class="ml-tp-l" href="/">${back}<span class="ml-tp-txt">Назад</span></a>` +
         `<a class="ml-tp-logo" href="/" aria-label="Moonlight — на главную"><i class="ml-hlogo-w"></i><span class="ml-hlogo-s">профессиональное освещение</span></a>` +
         `<div class="ml-tp-r"><a href="/#ml-catalog">${cat}<span class="ml-tp-txt">Каталог</span></a>` +
-        `<a href="https://wa.me/996998899675" target="_blank" rel="noopener" aria-label="WhatsApp">${PP_ICO.wa}</a>` +
+        `<a href="https://wa.me/996500037733" target="_blank" rel="noopener" aria-label="WhatsApp">${PP_ICO.wa}</a>` +
         `<button type="button" class="ml-tp-cart" aria-label="Корзина">${cart}<b></b></button></div>`;
       // «Назад»: вернуться, если пришли с нашего сайта, иначе на главную
       bar.querySelector('.ml-tp-l').onclick = e => { if (D.referrer && new URL(D.referrer).host === location.host && history.length > 1){ e.preventDefault(); history.back(); } };
@@ -1484,7 +1484,7 @@ function extras(){
     const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
     const plural = (n, a, b, c) => { n = Math.abs(n) % 100; const d = n % 10; return n > 10 && n < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
     const fmt = n => n.toLocaleString('ru-RU').replace(/ /g, ' ');
-    const WA = '996998899675';
+    const WA = '996500037733';
     const ICO = {
       wa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l1.3-4A8 8 0 1 1 8 18.7z"/><path d="M9 9.5c0 3 2.5 5.5 5.5 5.5l1.2-1.4-2-1-1 .8a4 4 0 0 1-2.1-2.1l.8-1-1-2z"/></svg>',
       x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
@@ -1791,7 +1791,7 @@ function extras(){
     if (!rec || rec.dataset.mlWorks) return; rec.dataset.mlWorks = 1;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
     const plural = (n, a, b, c) => { n = Math.abs(n) % 100; const d = n % 10; return n > 10 && n < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c; };
-    const WA = '996998899675';
+    const WA = '996500037733';
     const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
     const txt = el => el ? el.innerText.replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{2,}/g, '\n').trim() : '';
     // картинка CDN Тильды нужной ширины

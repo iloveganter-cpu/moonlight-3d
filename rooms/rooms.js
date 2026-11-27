@@ -2311,13 +2311,11 @@ if (fine){
   const cvar = (v, def) => pal[v] || (pal[v] = hexRgb(getComputedStyle(root).getPropertyValue(v).trim() || def));
   setInterval(() => { for (const k in pal) delete pal[k]; }, 1500);   // --glow меняется ползунком комнат, цвета — Студией
   const css = D.createElement('style');
-  css.textContent = `html.ml-star-on,html.ml-star-on *{cursor:none!important}
-html.ml-star-on *::-webkit-slider-thumb{cursor:none!important}
-html.ml-star-on *::-webkit-slider-runnable-track{cursor:none!important}
-html.ml-star-on *::-moz-range-thumb{cursor:none!important}
-html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on input[type=email],html.ml-star-on textarea{cursor:text!important}
-.ml-star,.ml-star-ring,.ml-star-cv{position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647}
-.ml-star{width:26px;height:26px;margin:-13px 0 0 -13px;opacity:0;transition:opacity .2s}
+  // 27.11: сама звезда — системный курсор (картинка SVG): двигается видеокартой без задержки, даже когда страница занята.
+  // JS рисует только эффекты вокруг (кольцо у кнопок, след, вспышки), их запаздывание незаметно.
+  css.textContent = `.ml-star,.ml-star-ring,.ml-star-cv{position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647}
+.ml-star-ring{will-change:transform,width,height}
+.ml-star{display:none!important}
 .ml-star svg{display:block;overflow:visible}
 .ml-star-in .ml-star{opacity:1}
 .ml-star-in .ml-star.off{opacity:0}
@@ -2369,6 +2367,33 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     svg.style.filter = !h ? 'none' : dark ? `drop-shadow(0 0 ${5 * h}px ${rgba(.95)})` : `drop-shadow(0 0 1.5px ${rgba(.9)}) drop-shadow(0 0 ${7 * h}px ${rgba(.6)})`;
     ring.style.boxShadow = opt.btn === 'fill' ? `0 0 0 1px ${rgba(.5)},0 0 30px ${rgba(.35)}` : `0 0 0 ${dark ? 1.5 : 2}px ${C},0 0 ${24 * Math.max(.4, h)}px ${rgba(.6)},inset 0 0 14px ${rgba(.28)}`;
     ring.style.background = opt.btn === 'fill' ? rgba(dark ? .22 : .18) : 'none';
+    curRule();
+  }
+  // системный курсор: та же звезда/форма, те же цвета и сияние, 32×32 (больше Chrome у краёв окна не показывает)
+  const curCss = D.createElement('style'); D.head.appendChild(curCss);
+  function curSvg(isLink){
+    const C = 'rgb(' + rgb() + ')', g = 'rgb(' + cvar('--mlc-graphite', '#2F3438') + ')', outline = opt.shape === 'ring';
+    let fill, stroke;
+    if (opt.color === 'mono'){ fill = dark ? '#fff' : g; stroke = dark ? 'rgba(255,255,255,.35)' : '#fff'; }
+    else if (opt.color === 'custom' || opt.color === 'warm'){ fill = dark ? '#fff' : C; stroke = dark ? C : '#fff'; }
+    else { fill = dark ? '#fff' : g; stroke = dark ? C : '#fff'; }
+    if (outline){ stroke = dark ? (opt.color === 'mono' ? '#fff' : C) : (opt.color === 'mono' ? g : C); fill = 'none'; }
+    const L = isLink && opt.link, k = Math.min(1.22, Math.min(1.08, opt.size) * (L ? 1.2 : 1));
+    const sw = (outline ? 2.2 : dark ? 1.2 : 1.4) / k, h = opt.halo;
+    const flt = h ? `<filter id="g" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="${((dark ? 1.7 : 1.3) * h).toFixed(2)}" flood-color="${C}" flood-opacity="${dark ? .95 : .7}"/></filter>` : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="-16 -16 32 32">${flt}<path d="${SHAPES[opt.shape]}" transform="rotate(${L ? 45 : 0}) scale(${k.toFixed(3)})" fill="${fill}" stroke="${stroke}" stroke-width="${sw.toFixed(2)}" stroke-linejoin="round"${h ? ' filter="url(#g)"' : ''}/></svg>`;
+  }
+  function curRule(){
+    if (opt.off){ curCss.textContent = ''; return; }
+    const u = l => `url("data:image/svg+xml,${encodeURIComponent(curSvg(l))}") 16 16,auto`, N = u(false), K = u(true), Ls = ':is(' + LINK + ')';
+    // ползунки — отдельными правилами (иначе Chrome выкидывает весь список)
+    curCss.textContent = `html.ml-star-on,html.ml-star-on *{cursor:${N}!important}
+html.ml-star-on *::-webkit-slider-thumb{cursor:${K}!important}
+html.ml-star-on *::-moz-range-thumb{cursor:${K}!important}
+html.ml-star-on ${Ls},html.ml-star-on ${Ls} *{cursor:${K}!important}
+html.ml-star-on input[type=text],html.ml-star-on input[type=tel],html.ml-star-on input[type=email],html.ml-star-on input[type=search],html.ml-star-on textarea{cursor:text!important}
+html.ml-star-on.ml-star-hide,html.ml-star-on.ml-star-hide *{cursor:none!important}
+html.ml-star-on .mls-host,html.ml-star-on .mls-host *{cursor:auto!important}`;
   }
 
   const LINK = 'a,button,input,label,select,textarea,[role=button],[role=tab],[role=switch],.lr-hs,.js-product';
@@ -2384,7 +2409,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     const filled = bg && (bg.length < 4 || +bg[3] > .3), bordered = parseFloat(cs.borderTopWidth) > 0 && cs.borderTopStyle !== 'none';
     return filled || bordered ? b : null;
   }
-  let inPanel = false, lastDark = null, mx = -500, my = -500, sx = -500, sy = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
+  let lastEl = null, inPanel = false, lastDark = null, mx = -500, my = -500, sx = -500, sy = -500, px = 0, py = 0, seen = false, link = false, btn = null, dark = true, beam = false, clickAt = -1e9, lastProbe = 0, burst = false;
   function probe(){
     const el = D.elementFromPoint(mx, my); if (!el) return;
     let n = el, c = null;
@@ -2402,6 +2427,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     btn = b; link = !b && !!(el && el.closest(LINK));
     const hug = btn && (opt.btn === 'ring' || opt.btn === 'fill');
     star.classList.toggle('off', inPanel || beam || (btn && opt.btn === 'ring'));
+    root.classList.toggle('ml-star-hide', !inPanel && (beam || !!(btn && opt.btn === 'ring')));
     ring.classList.toggle('on', !!hug);
     if (btn){ const r = btn.getBoundingClientRect(), br = parseFloat(getComputedStyle(btn).borderTopLeftRadius) || 0;
       if (!ring.classList.contains('was')){ rx = sx; ry = sy; rw = 10; rh = 10; }
@@ -2412,13 +2438,14 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
     if (e.pointerType !== 'mouse') return;
     mx = e.clientX; my = e.clientY;
     if (!seen){ seen = true; px = sx = mx; py = sy = my; root.classList.add('ml-star-in'); probe(); }
-    target(e.target);
+    // замеры элемента (getComputedStyle/getBoundingClientRect) — только когда сменился элемент под мышью, а не на каждое движение
+    if (e.target !== lastEl){ lastEl = e.target; target(e.target); }
   }, {passive:true});
   addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') clickAt = performance.now(); });
   addEventListener('scroll', () => { lastProbe = 0; if (seen) target(D.elementFromPoint(mx, my)); }, {passive:true});
   D.addEventListener('mouseleave', () => { root.classList.remove('ml-star-in'); target(null); });
   D.addEventListener('mouseenter', () => { if (seen) root.classList.add('ml-star-in'); });
-  D.addEventListener('mls-apply', () => { readOpts(); if (seen){ probe(); target(D.elementFromPoint(mx, my)); } });
+  D.addEventListener('mls-apply', () => { readOpts(); paint(); lastEl = null; if (seen){ probe(); target(D.elementFromPoint(mx, my)); } });
 
   const dots = [], trail = []; let lastT = '', dotsDirty = false, ang = 0, sc = 1, lastDot = 0, rx = 0, ry = 0, rw = 10, rh = 10, rr = 20;
   const K = RM ? 1 : 0;
@@ -2426,7 +2453,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
   function spark(x, y, r, a){ ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.beginPath();
     for (let i = 0; i < 4; i++){ ctx.rotate(Math.PI / 2); ctx.moveTo(0, -r); ctx.quadraticCurveTo(r * .12, -r * .12, r, 0); ctx.lineTo(0, 0); }
     ctx.closePath(); ctx.restore(); }
-  readOpts();
+  readOpts(); paint();   // курсор-картинка ставится сразу, до первого движения мыши
   function frame(t){
     requestAnimationFrame(frame);
     if (!seen || opt.off){ if (dotsDirty){ ctx.clearRect(0, 0, W, H); dotsDirty = false; dots.length = 0; } return; }
@@ -2434,8 +2461,7 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
       // кнопку закрыли/перекрыли без движения мыши (корзина, окно) — кольцо не должно висеть в пустоте
       if (btn && seen){ const h = D.elementFromPoint(mx, my); if (!h || !btn.isConnected || !(btn === h || btn.contains(h))) target(h); } }
     // плавность: курсор догоняет мышь с инерцией
-    const f = RM ? 1 : 1 - Math.min(.92, opt.lag * .95);
-    sx = lerp(sx, mx, f); sy = lerp(sy, my, f);
+    sx = mx; sy = my;   // эффекты привязаны к настоящей мыши (системный курсор не запаздывает)
     const vx = sx - px; px = sx;
     const vy = sy - py; py = sy; const sp = Math.hypot(vx, vy);
     // вращение: от скорости / спокойно / всё время; над ссылкой — на 45° и крупнее
@@ -2444,8 +2470,6 @@ html:not(.ml-star-on) :is(.ml-star,.ml-star-ring,.ml-star-cv){display:none}`;
       else ang += vx * .6 + (tgt ? (45 - ((ang % 90) + 90) % 90) * .12 : 0); }
     const grow = (link && opt.link ? 1.6 : 1) * (btn && opt.btn === 'magnet' ? 1.5 : 1) * (btn && opt.btn === 'none' ? 1.3 : 1);
     sc = lerp(sc, grow, K || .15);
-    const stT = `translate3d(${sx.toFixed(1)}px,${sy.toFixed(1)}px,0) rotate(${ang.toFixed(1)}deg) scale(${sc.toFixed(3)})`;
-    if (stT !== lastT){ star.style.transform = stT; lastT = stT; }   // мышь стоит — стиль не трогаем (иначе пересчёт каждый кадр)
     // кнопку под курсором убрали из страницы (перерисовка) — берём то, что теперь под курсором
     if (btn && !btn.isConnected){ btn = null; target(D.elementFromPoint(mx, my)); }
     // над кнопкой: кнопка тянется к курсору; кольцо обнимает её или под курсором — полупрозрачный круг

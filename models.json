@@ -503,5 +503,47 @@
     "glb": "TR9586/TR9586.glb",
     "poster": "TR9586/poster.webp",
     "orbit": "-35deg 85deg auto"
+  },
+  "256260984024": {
+    "title": "Ambrella LH11039",
+    "size": "150 × 220 × 300 мм",
+    "glb": "LH11039/LH11039.glb",
+    "poster": "LH11039/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "659332971654": {
+    "title": "Ambrella LH31112",
+    "size": "Ø250 × 90 мм",
+    "glb": "LH31112/LH31112.glb",
+    "poster": "LH31112/poster.webp",
+    "orbit": "30deg 85deg auto"
+  },
+  "139844970584": {
+    "title": "Ambrella LH31121",
+    "size": "200 × 90 × 390 мм",
+    "glb": "LH31121/LH31121.glb",
+    "poster": "LH31121/poster.webp",
+    "orbit": "30deg 85deg auto"
+  },
+  "725539734784": {
+    "title": "Ambrella LH53688",
+    "size": "60 × 85 × 300 мм",
+    "glb": "LH53688/LH53688.glb",
+    "poster": "LH53688/poster.webp",
+    "orbit": "-35deg 85deg auto"
+  },
+  "562119575764": {
+    "title": "Ambrella LH11021",
+    "size": "Ø120 × 435 мм, подвес 690–1840 мм",
+    "glb": "LH11021/LH11021.glb",
+    "poster": "LH11021/poster.webp",
+    "orbit": "0deg 88deg auto"
+  },
+  "641859897482": {
+    "title": "Ambrella LH11023",
+    "size": "Ø120 × 520 мм, подвес 775–1925 мм",
+    "glb": "LH11023/LH11023.glb",
+    "poster": "LH11023/poster.webp",
+    "orbit": "0deg 88deg auto"
   }
 }
